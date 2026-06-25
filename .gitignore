@@ -1,0 +1,11 @@
+.godot/
+builds/
+android/build/.gradle/
+android/build/build/
+android/build/local.properties
+android/build/libs/
+google-services.json
+android/build/google-services.json
+*.log
+*.keystore
+*.jks
