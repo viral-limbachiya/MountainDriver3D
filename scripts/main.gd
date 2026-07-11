@@ -98,6 +98,12 @@ var repair_audio: AudioStreamPlayer
 var audio_muted := false
 var firebase_analytics: Object = null
 var firebase_messaging: Object = null
+var admob_bridge: Object = null
+var ad_reward_type := ""
+var coins_doubled_this_run := false
+var run_final_coins := 0
+var double_coins_btn: Button
+var revive_ad_btn: Button
 var billing_client: BillingClient
 var billing_ready := false
 var store_prices := {}
@@ -138,6 +144,16 @@ func _ready() -> void:
 		firebase_messaging = Engine.get_singleton("FirebaseMessagingBridge")
 		firebase_messaging.fcm_token_received.connect(_on_fcm_token_received)
 		firebase_messaging.notification_received.connect(_on_notification_received)
+
+	if Engine.has_singleton("AdMobBridge"):
+		admob_bridge = Engine.get_singleton("AdMobBridge")
+		admob_bridge.admob_initialized.connect(_on_admob_initialized)
+		admob_bridge.rewarded_ad_loaded.connect(_on_rewarded_ad_loaded)
+		admob_bridge.rewarded_ad_dismissed.connect(_on_rewarded_ad_dismissed)
+		admob_bridge.rewarded_interstitial_loaded.connect(_on_rewarded_interstitial_loaded)
+		admob_bridge.rewarded_interstitial_dismissed.connect(_on_rewarded_interstitial_dismissed)
+		admob_bridge.user_earned_reward.connect(_on_user_earned_reward)
+		admob_bridge.initialize_admob()
 		firebase_messaging.get_fcm_token()
 		firebase_messaging.subscribe_to_topic("all_users")
 		
@@ -953,8 +969,19 @@ func update_effects(delta: float) -> void:
 
 func finish_run(won: bool, title: String) -> void:
 	state = GameState.RESULT
+	update_admob_banners()
 	var drive_points := int(distance * 0.15)
 	var final_coins := coins_run + (150 if won else 0) + drive_points
+	
+	run_final_coins = final_coins
+	coins_doubled_this_run = false
+	if is_instance_valid(double_coins_btn):
+		double_coins_btn.disabled = false
+		double_coins_btn.text = "💎 DOUBLE COINS (WATCH AD)"
+		double_coins_btn.visible = won and (final_coins > 0)
+	if is_instance_valid(revive_ad_btn):
+		revive_ad_btn.visible = not won
+
 	var mission_bonus := 120 if mission_progress >= mission_target else 0
 	total_coins += final_coins
 	total_coins += mission_bonus
@@ -1337,16 +1364,24 @@ func build_ui() -> void:
 	make_button(pause_panel, "QUIT TO MENU", Vector2(75, 265), Vector2(250, 52), show_menu, Color("#6a4e49"))
 	pause_panel.visible = false
 
-	result_panel = make_panel(hud_root, Vector2(385, 190), Vector2(510, 310), Color(0.025, 0.055, 0.075, 0.95))
+	result_panel = make_panel(hud_root, Vector2(385, 150), Vector2(510, 420), Color(0.025, 0.055, 0.075, 0.95))
 	result_title = make_label(result_panel, "RESULT", Vector2(55, 48), 38)
 	result_detail = make_label(result_panel, "", Vector2(55, 115), 20)
 	make_button(result_panel, "DRIVE AGAIN", Vector2(55, 210), Vector2(190, 58), func() -> void: start_game(difficulty), Color("#ff9b31"))
 	make_button(result_panel, "MAIN MENU", Vector2(265, 210), Vector2(190, 58), show_menu, Color("#526b78"))
+	
+	double_coins_btn = make_button(result_panel, "💎 DOUBLE COINS (WATCH AD)", Vector2(55, 285), Vector2(400, 52), watch_ad_double_coins, Color("#8c64d9"))
+	double_coins_btn.name = "DoubleCoinsButton"
+	
+	revive_ad_btn = make_button(result_panel, "🎬 WATCH AD TO REVIVE", Vector2(55, 345), Vector2(400, 52), watch_ad_revive, Color("#2da8ff"))
+	revive_ad_btn.name = "ReviveAdButton"
+	
 	result_panel.visible = false
 
 
 func show_menu() -> void:
 	state = GameState.MENU
+	update_admob_banners()
 	menu_root.visible = true
 	hud_root.visible = false
 	if is_instance_valid(pause_panel):
@@ -1368,6 +1403,7 @@ func show_menu() -> void:
 func show_game_ui() -> void:
 	menu_root.visible = false
 	hud_root.visible = true
+	update_admob_banners()
 	result_panel.visible = false
 	if is_instance_valid(pause_panel):
 		pause_panel.visible = false
@@ -1787,6 +1823,7 @@ func update_garage_ui() -> void:
 
 func resume_game() -> void:
 	state = GameState.PLAYING
+	update_admob_banners()
 	status_label.text = difficulty.to_upper()
 	if is_instance_valid(pause_panel):
 		pause_panel.visible = false
@@ -1810,6 +1847,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if state == GameState.PLAYING:
 		if event.keycode == KEY_ESCAPE:
 			state = GameState.PAUSED
+			update_admob_banners()
 			status_label.text = "PAUSED"
 			if is_instance_valid(pause_panel):
 				pause_panel.visible = true
@@ -2214,6 +2252,105 @@ func play_victory_sound() -> void:
 			)
 		)
 	)
+
+
+func update_admob_banners() -> void:
+	if not is_instance_valid(admob_bridge):
+		return
+	if state == GameState.MENU or state == GameState.PAUSED or state == GameState.RESULT:
+		admob_bridge.show_banner()
+	else:
+		admob_bridge.hide_banner()
+
+
+func watch_ad_double_coins() -> void:
+	if is_instance_valid(admob_bridge) and admob_bridge.is_rewarded_loaded():
+		ad_reward_type = "double_coins"
+		admob_bridge.show_rewarded()
+	else:
+		spawn_floating_text("Ad loading... Try again in a moment!", Color.WHITE, player.global_position + Vector3(0, 2.5, 0))
+		if is_instance_valid(admob_bridge):
+			admob_bridge.load_rewarded("ca-app-pub-4388124781066496/7965236020")
+
+
+func watch_ad_revive() -> void:
+	if is_instance_valid(admob_bridge) and admob_bridge.is_rewarded_loaded():
+		ad_reward_type = "revive"
+		admob_bridge.show_rewarded()
+	else:
+		spawn_floating_text("Ad loading... Try again in a moment!", Color.WHITE, player.global_position + Vector3(0, 2.5, 0))
+		if is_instance_valid(admob_bridge):
+			admob_bridge.load_rewarded("ca-app-pub-4388124781066496/7965236020")
+
+
+func _on_admob_initialized() -> void:
+	print("[AdMob] Initialized successfully!")
+	if is_instance_valid(admob_bridge):
+		admob_bridge.load_banner("ca-app-pub-4388124781066496/8899043745", false)
+		admob_bridge.load_rewarded("ca-app-pub-4388124781066496/7965236020")
+		admob_bridge.load_rewarded_interstitial("ca-app-pub-4388124781066496/3838288755")
+		update_admob_banners()
+
+
+func _on_rewarded_ad_loaded() -> void:
+	print("[AdMob] Rewarded ad loaded!")
+
+
+func _on_rewarded_ad_dismissed() -> void:
+	print("[AdMob] Rewarded ad dismissed!")
+	if is_instance_valid(admob_bridge):
+		admob_bridge.load_rewarded("ca-app-pub-4388124781066496/7965236020")
+
+
+func _on_rewarded_interstitial_loaded() -> void:
+	print("[AdMob] Rewarded interstitial ad loaded!")
+
+
+func _on_rewarded_interstitial_dismissed() -> void:
+	print("[AdMob] Rewarded interstitial dismissed!")
+	if is_instance_valid(admob_bridge):
+		admob_bridge.load_rewarded_interstitial("ca-app-pub-4388124781066496/3838288755")
+
+
+func _on_user_earned_reward(type: String, amount: int) -> void:
+	print("[AdMob] User earned reward! Type: ", type, ", Amount: ", amount)
+	if ad_reward_type == "double_coins":
+		if not coins_doubled_this_run:
+			coins_doubled_this_run = true
+			total_coins += run_final_coins
+			lifetime_coins += run_final_coins
+			save_progress()
+			save_cloud_profile()
+			submit_lifetime_scores()
+			
+			var wallet := menu_root.find_child("Wallet", true, false) as Label
+			if wallet:
+				wallet.text = "COINS  %d" % total_coins
+				
+			result_detail.text = "Double Coins Claimed!\nTotal Coins +%d   Press R to retry" % (run_final_coins * 2)
+			spawn_floating_text("COINS DOUBLED! +%d" % run_final_coins, Color("#ffd34f"), player.global_position + Vector3(0, 2.5, 0))
+			if is_instance_valid(double_coins_btn):
+				double_coins_btn.disabled = true
+				double_coins_btn.text = "COINS DOUBLED"
+	elif ad_reward_type == "revive":
+		damage = 0.0
+		fuel = 100.0 + upgrades.tank * 14.0
+		state = GameState.PLAYING
+		update_admob_banners()
+		
+		if is_instance_valid(result_panel):
+			result_panel.visible = false
+			
+		if is_instance_valid(engine_audio):
+			engine_audio.play()
+		if is_instance_valid(music_audio):
+			music_audio.volume_db = -6.0
+			if not music_audio.playing:
+				music_audio.play()
+				
+		status_label.text = "REVIVED & READY!"
+		spawn_floating_text("REVIVED! 100% HP & FUEL", Color("#4cd964"), player.global_position + Vector3(0, 2.8, 0))
+		log_firebase_event("player_revive_ad")
 
 
 func log_firebase_event(event_name: String, params: Dictionary = {}) -> void:
