@@ -4,7 +4,21 @@ const ROAD_LENGTH := 3200.0
 const ROAD_WIDTH := 13.0
 const SEGMENT_LENGTH := 12.0
 const START_Z := 25.0
+const CAR_RIDE_HEIGHT := 0.75
 const SAVE_PATH := "user://mountain_driver_3d.cfg"
+const PRODUCT_RALLY := "premium_rally_suv"
+const PRODUCT_VELOCITY := "premium_velocity_car"
+const PRODUCT_GARAGE := "premium_garage_max"
+const PREMIUM_PRODUCTS := [PRODUCT_RALLY, PRODUCT_VELOCITY, PRODUCT_GARAGE]
+const LEADERBOARD_LIFETIME_COINS := "REPLACE_WITH_LIFETIME_COINS_LEADERBOARD_ID"
+const LEADERBOARD_BEST_DISTANCE := "REPLACE_WITH_BEST_DISTANCE_LEADERBOARD_ID"
+const ACHIEVEMENT_FIRST_DRIVE := "REPLACE_WITH_FIRST_DRIVE_ACHIEVEMENT_ID"
+const ACHIEVEMENT_FUEL_COLLECTOR := "REPLACE_WITH_FUEL_COLLECTOR_ACHIEVEMENT_ID"
+const ACHIEVEMENT_COIN_COLLECTOR := "REPLACE_WITH_COIN_COLLECTOR_ACHIEVEMENT_ID"
+const ACHIEVEMENT_REPAIR_EXPERT := "REPLACE_WITH_REPAIR_EXPERT_ACHIEVEMENT_ID"
+const ACHIEVEMENT_FINISH_LINE := "REPLACE_WITH_FINISH_LINE_ACHIEVEMENT_ID"
+const ACHIEVEMENT_UPGRADE_KING := "REPLACE_WITH_UPGRADE_KING_ACHIEVEMENT_ID"
+const CLOUD_SAVE_NAME := "mountain_driver_profile"
 
 enum GameState { MENU, PLAYING, PAUSED, RESULT }
 
@@ -18,10 +32,14 @@ var world_environment: WorldEnvironment
 var sun: DirectionalLight3D
 var speed := 0.0
 var steering := 0.0
+var road_lateral_offset := 0.0
 var fuel := 100.0
 var damage := 0.0
 var coins_run := 0
 var total_coins := 0
+var lifetime_coins := 0
+var completed_runs := 0
+var best_distance := 0
 var distance := 0.0
 var checkpoint_z := START_Z
 var crash_cooldown := 0.0
@@ -49,6 +67,8 @@ var tail_lights: MeshInstance3D
 var head_lights: MeshInstance3D
 var head_spotlight: SpotLight3D
 var garage_panel: Panel
+var premium_panel: Panel
+var profile_panel: Panel
 var pause_panel: Panel
 var floating_texts: Array[Dictionary] = []
 
@@ -77,6 +97,19 @@ var checkpoint_audio: AudioStreamPlayer
 var repair_audio: AudioStreamPlayer
 var audio_muted := false
 var firebase_analytics: Object = null
+var firebase_messaging: Object = null
+var billing_client: BillingClient
+var billing_ready := false
+var store_prices := {}
+var owned_products := {PRODUCT_RALLY: false, PRODUCT_VELOCITY: false, PRODUCT_GARAGE: false}
+var selected_car := "standard"
+var last_daily_reward_date := ""
+var play_games_ready := false
+var play_games_sign_in: PlayGamesSignInClient
+var play_games_leaderboards: PlayGamesLeaderboardsClient
+var play_games_snapshots: PlayGamesSnapshotsClient
+var play_games_achievements: PlayGamesAchievementsClient
+var play_games_players: PlayGamesPlayersClient
 
 var modes := {
 	"Easy": {"max_speed": 36.0, "fuel": 0.36, "traffic": 11, "damage": 0.62},
@@ -88,15 +121,28 @@ var modes := {
 func _ready() -> void:
 	rng.seed = 25062026
 	load_progress()
+	check_daily_reward()
 	build_environment()
 	build_road_and_scenery()
 	build_player()
 	build_ui()
 	build_audio()
+	initialize_billing()
+	initialize_play_games()
 	
 	if Engine.has_singleton("FirebaseAnalyticsBridge"):
 		firebase_analytics = Engine.get_singleton("FirebaseAnalyticsBridge")
 		log_firebase_event("app_start")
+		
+	if Engine.has_singleton("FirebaseMessagingBridge"):
+		firebase_messaging = Engine.get_singleton("FirebaseMessagingBridge")
+		firebase_messaging.fcm_token_received.connect(_on_fcm_token_received)
+		firebase_messaging.notification_received.connect(_on_notification_received)
+		firebase_messaging.get_fcm_token()
+		firebase_messaging.subscribe_to_topic("all_users")
+		
+	if OS.has_feature("android"):
+		OS.request_permission("android.permission.POST_NOTIFICATIONS")
 		
 	show_menu()
 
@@ -132,7 +178,11 @@ func build_environment() -> void:
 	sun.directional_shadow_max_distance = 180.0
 	add_child(sun)
 
-	add_box(self, Vector3(0, -11, ROAD_LENGTH * 0.5), Vector3(340, 14, ROAD_LENGTH + 500), Color("#385e47"))
+	# Large overlapping terrain slabs give every part of the trip its own palette.
+	add_box(self, Vector3(0, -11, 400), Vector3(340, 14, 850), Color("#52644b"))
+	add_box(self, Vector3(0, -11, 1225), Vector3(340, 14, 850), Color("#183f2c"))
+	add_box(self, Vector3(0, -11, 2050), Vector3(340, 14, 850), Color("#62635f"))
+	add_box(self, Vector3(0, -11, 2825), Vector3(340, 14, 760), Color("#d5e2e5"))
 
 
 func build_road_and_scenery() -> void:
@@ -152,11 +202,13 @@ func build_road_and_scenery() -> void:
 		var yaw := atan2(delta.x, delta.z)
 		var pitch := -atan2(delta.y, Vector2(delta.x, delta.z).length())
 		var broken := is_bad_road(z)
+		var zone := route_zone(z)
+		var road_color := zone_road_color(zone)
 		var piece := add_box(
 			root,
 			(a + b) * 0.5 - Vector3(0, 0.4, 0),
 			Vector3(ROAD_WIDTH, 0.75, delta.length() + 0.6),
-			Color("#69584d") if broken else Color("#32363b")
+			Color("#69584d") if broken else road_color
 		)
 		piece.rotation = Vector3(pitch, yaw, 0)
 
@@ -174,6 +226,9 @@ func build_road_and_scenery() -> void:
 				add_guardrail(root, a, yaw, 1.0)
 		if index % 18 == 0 and index > 2:
 			add_road_sign(root, z)
+
+	for transition in [Vector2(800, 1), Vector2(1650, 2), Vector2(2450, 3)]:
+		build_zone_gate(root, transition.x, int(transition.y))
 
 	build_bridge(root, 1420.0)
 	build_finish(root)
@@ -194,6 +249,17 @@ func add_broken_road_details(parent: Node3D, center: Vector3, pitch: float, yaw:
 
 
 func add_roadside_terrain(parent: Node3D, z: float, side: float) -> void:
+	var zone := route_zone(z)
+	if zone == "JUNGLE":
+		add_jungle_scenery(parent, z, side)
+		return
+	if zone == "CITY":
+		add_city_scenery(parent, z, side)
+		return
+	if zone == "SNOW":
+		add_snow_scenery(parent, z, side)
+		return
+
 	var center_x := road_x(z)
 	var height := rng.randf_range(12.0, 38.0)
 	var mountain := MeshInstance3D.new()
@@ -209,6 +275,86 @@ func add_roadside_terrain(parent: Node3D, z: float, side: float) -> void:
 	parent.add_child(mountain)
 	for tree_index in range(rng.randi_range(1, 3)):
 		add_tree(parent, Vector3(center_x + side * rng.randf_range(15.0, 28.0), road_y(z) - 1.0, z + rng.randf_range(-10, 10)))
+
+
+func add_jungle_scenery(parent: Node3D, z: float, side: float) -> void:
+	var center_x := road_x(z)
+	for index in range(3):
+		var pos := Vector3(center_x + side * rng.randf_range(10.5, 32.0), road_y(z) - 0.8, z + rng.randf_range(-9.0, 9.0))
+		add_broadleaf_tree(parent, pos, rng.randf_range(0.8, 1.35))
+	if rng.randf() < 0.38:
+		var rock := add_box(parent, Vector3(center_x + side * 18.0, road_y(z) - 0.1, z), Vector3(3.0, 1.5, 2.3), Color("#415248"))
+		rock.rotation_degrees = Vector3(8, rng.randf_range(0, 80), 5)
+
+
+func add_broadleaf_tree(parent: Node3D, position: Vector3, scale_factor: float) -> void:
+	add_cylinder(parent, position + Vector3(0, 2.4 * scale_factor, 0), 0.34 * scale_factor, 4.8 * scale_factor, Color("#59402c"))
+	for offset in [Vector3(0, 5.0, 0), Vector3(-1.1, 4.5, 0.3), Vector3(1.0, 4.6, -0.4)]:
+		var crown := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 1.8 * scale_factor
+		sphere.height = 3.1 * scale_factor
+		crown.mesh = sphere
+		crown.position = position + offset * scale_factor
+		crown.material_override = make_material([Color("#135934"), Color("#1f7040"), Color("#2d7b43")].pick_random(), 1.0)
+		parent.add_child(crown)
+
+
+func add_city_scenery(parent: Node3D, z: float, side: float) -> void:
+	var center_x := road_x(z)
+	var width := rng.randf_range(7.0, 12.0)
+	var height := rng.randf_range(8.0, 23.0)
+	var depth := rng.randf_range(7.0, 12.0)
+	var building_pos := Vector3(center_x + side * rng.randf_range(18.0, 30.0), road_y(z) - 0.5 + height * 0.5, z)
+	var facade: Color = [Color("#b66f55"), Color("#d1b06f"), Color("#8797a3"), Color("#a57c91")].pick_random()
+	add_box(parent, building_pos, Vector3(width, height, depth), facade)
+	for floor in range(2, int(height), 3):
+		for column in [-0.25, 0.25]:
+			var window_pos := building_pos + Vector3(-side * (width * 0.51), floor - height * 0.5, column * depth)
+			add_box(parent, window_pos, Vector3(0.08, 1.25, 1.1), Color("#8ed1e5"))
+	add_streetlight(parent, Vector3(center_x + side * 8.4, road_y(z), z), side)
+
+
+func add_streetlight(parent: Node3D, position: Vector3, side: float) -> void:
+	add_cylinder(parent, position + Vector3(0, 2.8, 0), 0.09, 5.6, Color("#343b3f"))
+	add_box(parent, position + Vector3(-side * 0.55, 5.5, 0), Vector3(1.15, 0.12, 0.12), Color("#343b3f"))
+	add_box(parent, position + Vector3(-side * 1.0, 5.35, 0), Vector3(0.42, 0.16, 0.34), Color("#fff1a8"))
+
+
+func add_snow_scenery(parent: Node3D, z: float, side: float) -> void:
+	var center_x := road_x(z)
+	var height := rng.randf_range(14.0, 35.0)
+	var peak := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = rng.randf_range(10.0, 18.0)
+	cone.height = height
+	cone.radial_segments = 8
+	peak.mesh = cone
+	peak.position = Vector3(center_x + side * rng.randf_range(30.0, 55.0), road_y(z) - 5.0 + height * 0.5, z)
+	peak.material_override = make_material(Color("#cbd8dc"), 0.95)
+	parent.add_child(peak)
+	add_box(parent, Vector3(center_x + side * 9.0, road_y(z) - 0.35, z), Vector3(4.5, 0.9, 9.0), Color("#eef6f7"))
+	if rng.randf() < 0.7:
+		add_tree(parent, Vector3(center_x + side * rng.randf_range(13.0, 24.0), road_y(z) - 1.0, z + rng.randf_range(-7, 7)))
+
+
+func build_zone_gate(parent: Node3D, z: float, zone_index: int) -> void:
+	var labels := ["", "JUNGLE ROAD", "HILL CITY", "SNOW SUMMIT"]
+	var colors := [Color.WHITE, Color("#2fbc68"), Color("#ffb64d"), Color("#bfe9ff")]
+	var x := road_x(z)
+	var y := road_y(z)
+	add_box(parent, Vector3(x - 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index])
+	add_box(parent, Vector3(x + 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index])
+	add_box(parent, Vector3(x, y + 6.1, z), Vector3(14.2, 0.65, 0.4), colors[zone_index])
+	var label := Label3D.new()
+	label.text = labels[zone_index]
+	label.font_size = 64
+	label.modulate = Color("#152129")
+	label.outline_size = 8
+	label.position = Vector3(x, y + 6.15, z - 0.25)
+	label.rotation_degrees.y = 180
+	parent.add_child(label)
 
 
 func add_tree(parent: Node3D, position: Vector3) -> void:
@@ -272,7 +418,7 @@ func build_player() -> void:
 	front_wheel_nodes.clear()
 	wheel_nodes.clear()
 	
-	car_visual = create_vehicle(Color("#f38b2d"), "suv", true)
+	car_visual = create_vehicle(selected_car_color(), selected_car_type(), true)
 	player.add_child(car_visual)
 	camera = Camera3D.new()
 	camera.current = true
@@ -338,11 +484,25 @@ func create_vehicle(color: Color, vehicle_type: String, is_player := false) -> N
 		length = 6.6
 		width = 2.35
 		height = 1.2
+	elif vehicle_type == "premium_rally":
+		length = 4.8
+		width = 2.35
+		height = 0.86
+	elif vehicle_type == "premium_velocity":
+		length = 4.75
+		width = 2.3
+		height = 0.58
 	add_box(root, Vector3(0, 0.18, 0), Vector3(width, height, length), color)
 	add_box(root, Vector3(0, 0.92, -0.45), Vector3(width * 0.82, 0.85, length * 0.46), color.lightened(0.06))
 	add_box(root, Vector3(0, 1.02, -0.62), Vector3(width * 0.7, 0.45, length * 0.28), Color("#8ec9df"))
 	if vehicle_type == "truck":
 		add_box(root, Vector3(0, 1.0, 1.45), Vector3(width * 0.94, 1.85, 3.0), color.darkened(0.12))
+	elif vehicle_type == "premium_rally":
+		add_box(root, Vector3(0, 1.52, -0.35), Vector3(width * 0.78, 0.12, 2.0), Color("#20262a"))
+		add_box(root, Vector3(0, 0.48, length * 0.52), Vector3(width * 0.82, 0.18, 0.12), Color("#ffdf68"))
+	elif vehicle_type == "premium_velocity":
+		add_box(root, Vector3(0, 0.48, -length * 0.47), Vector3(width * 0.92, 0.12, 0.55), color.darkened(0.18))
+		add_box(root, Vector3(0, 0.82, -0.2), Vector3(width * 0.7, 0.16, 2.0), Color("#17252d"))
 	for x in [-width * 0.53, width * 0.53]:
 		for z in [-length * 0.32, length * 0.32]:
 			var wheel_holder := Node3D.new()
@@ -355,6 +515,17 @@ func create_vehicle(color: Color, vehicle_type: String, is_player := false) -> N
 				if z > 0:
 					front_wheel_nodes.append(wheel_holder)
 	if is_player:
+		# SUV detailing: bumpers, grille, glass, mirrors and roof rack make the
+		# player's vehicle read clearly from the chase camera.
+		add_box(root, Vector3(0, 0.05, length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"))
+		add_box(root, Vector3(0, 0.23, length * 0.515), Vector3(width * 0.5, 0.28, 0.08), Color("#111719"))
+		add_box(root, Vector3(0, 0.05, -length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"))
+		for mirror_x in [-width * 0.56, width * 0.56]:
+			add_box(root, Vector3(mirror_x, 0.96, -0.15), Vector3(0.22, 0.18, 0.38), Color("#20272a"))
+		for rack_x in [-width * 0.32, width * 0.32]:
+			add_box(root, Vector3(rack_x, 1.48, -0.45), Vector3(0.08, 0.1, 2.0), Color("#252b2e"))
+		for rack_z in [-1.25, 0.25]:
+			add_box(root, Vector3(0, 1.51, rack_z), Vector3(width * 0.72, 0.08, 0.08), Color("#252b2e"))
 		var front_lights := add_box(root, Vector3(0, 0.58, length * 0.51), Vector3(width * 0.72, 0.18, 0.11), Color("#fff0ae"))
 		var rear_lights := add_box(root, Vector3(0, 0.44, -length * 0.51), Vector3(width * 0.68, 0.16, 0.1), Color("#e94d45"))
 		head_lights = front_lights
@@ -485,10 +656,12 @@ func start_game(mode: String) -> void:
 	if not engine_audio.playing:
 		engine_audio.play()
 	log_firebase_event("game_start", {"difficulty": mode})
+	unlock_play_games_achievement(ACHIEVEMENT_FIRST_DRIVE)
 
 
 func reset_player() -> void:
-	player.position = Vector3(road_x(checkpoint_z), road_y(checkpoint_z) + 1.08, checkpoint_z)
+	road_lateral_offset = 0.0
+	player.position = Vector3(road_x(checkpoint_z), road_y(checkpoint_z) + CAR_RIDE_HEIGHT, checkpoint_z)
 	player.rotation = Vector3.ZERO
 	car_visual.rotation = Vector3.ZERO
 	speed = 0.0
@@ -557,10 +730,10 @@ func _physics_process(delta: float) -> void:
 	if broken:
 		speed = move_toward(speed, 0.0, 3.8 * delta / suspension)
 	player.position.z += speed * delta
-	player.position.x += lateral_speed * delta
+	road_lateral_offset += lateral_speed * delta
 
 	var center := road_x(player.position.z)
-	var offset := player.position.x - center
+	var offset := road_lateral_offset
 	var driveable_half_width := ROAD_WIDTH * 0.41
 	if absf(offset) > driveable_half_width:
 		speed = move_toward(speed, 0.0, 15.0 * delta)
@@ -568,17 +741,14 @@ func _physics_process(delta: float) -> void:
 		spawn_dust(Color("#b28b61"))
 		# Push the vehicle back onto the asphalt instead of allowing it to
 		# travel through roadside terrain or below curved road segments.
-		player.position.x = move_toward(
-			player.position.x,
-			center + signf(offset) * driveable_half_width,
+		road_lateral_offset = move_toward(
+			road_lateral_offset,
+			signf(offset) * driveable_half_width,
 			delta * 9.0
 		)
-	player.position.x = clampf(
-		player.position.x,
-		center - driveable_half_width,
-		center + driveable_half_width
-	)
-	var road_surface_y := road_y(player.position.z) + 1.16
+	road_lateral_offset = clampf(road_lateral_offset, -driveable_half_width, driveable_half_width)
+	player.position.x = center + road_lateral_offset
+	var road_surface_y := road_y(player.position.z) + CAR_RIDE_HEIGHT
 	player.position.y = lerpf(player.position.y, road_surface_y, delta * 14.0 * suspension)
 	player.position.y = maxf(player.position.y, road_surface_y - 0.04)
 	player.rotation.y = lerp_angle(player.rotation.y, road_yaw(player.position.z) - steering * 0.17, delta * 6.0)
@@ -662,19 +832,25 @@ func check_interactions() -> void:
 			if pickup.type == "fuel":
 				fuel = minf(100.0 + upgrades.tank * 14.0, fuel + 35.0)
 				mission_progress += 1
+				pickup_audio.pitch_scale = 1.0
 				pickup_audio.play()
 				spawn_floating_text("+35 FUEL", Color("#48d77e"), node.global_position)
 				log_firebase_event("player_pickup", {"type": "fuel"})
+				unlock_play_games_achievement(ACHIEVEMENT_FUEL_COLLECTOR)
 			elif pickup.type == "repair":
 				damage = maxf(0.0, damage - 38.0)
+				repair_audio.pitch_scale = 1.0
 				repair_audio.play()
 				spawn_floating_text("REPAIRED!", Color("#f0f3f4"), node.global_position)
 				log_firebase_event("player_pickup", {"type": "repair"})
+				unlock_play_games_achievement(ACHIEVEMENT_REPAIR_EXPERT)
 			else:
 				coins_run += 10
+				pickup_audio.pitch_scale = 1.0
 				pickup_audio.play()
 				spawn_floating_text("+10 COINS", Color("#ffd34f"), node.global_position)
 				log_firebase_event("player_pickup", {"type": "coin"})
+				unlock_play_games_achievement(ACHIEVEMENT_COIN_COLLECTOR)
 
 	for hazard in hazards:
 		if hazard.hit:
@@ -700,7 +876,7 @@ func check_interactions() -> void:
 			var final_damage: float = impact * damage_multiplier
 			damage = minf(100.0, damage + final_damage)
 			speed *= -0.24
-			player.position.x += signf(player.position.x - other.position.x) * 1.8
+			road_lateral_offset += signf(player.position.x - other.position.x) * 1.8
 			crash_cooldown = 1.15
 			spawn_impact_effect()
 			crash_audio.play()
@@ -714,6 +890,7 @@ func check_interactions() -> void:
 			checkpoint_z = checkpoint.z + 8.0
 			coins_run += 35
 			status_label.text = "CHECKPOINT SAVED"
+			checkpoint_audio.pitch_scale = 1.0
 			checkpoint_audio.play()
 			spawn_floating_text("CHECKPOINT!", Color("#62c9ff"), player.global_position + Vector3(0, 1.8, 0))
 			log_firebase_event("player_checkpoint", {"id": int(checkpoint.z)})
@@ -753,7 +930,14 @@ func update_effects(delta: float) -> void:
 		effect.node.position += effect.velocity * delta
 		effect.life -= delta
 		
-		if effect.get("is_smoke", false):
+		if effect.get("is_confetti", false):
+			effect.velocity.y -= 9.8 * delta
+			effect.node.rotate_x(delta * rng.randf_range(2.0, 8.0))
+			effect.node.rotate_y(delta * rng.randf_range(2.0, 8.0))
+			var mat := effect.node.material_override as StandardMaterial3D
+			if mat:
+				mat.albedo_color.a = clampf(effect.life / 2.0, 0.0, 1.0)
+		elif effect.get("is_smoke", false):
 			effect.node.scale += Vector3.ONE * delta * 1.6
 			var mat := effect.node.material_override as StandardMaterial3D
 			if mat:
@@ -769,17 +953,47 @@ func update_effects(delta: float) -> void:
 
 func finish_run(won: bool, title: String) -> void:
 	state = GameState.RESULT
-	var final_coins := coins_run + (150 if won else 0)
+	var drive_points := int(distance * 0.15)
+	var final_coins := coins_run + (150 if won else 0) + drive_points
+	var mission_bonus := 120 if mission_progress >= mission_target else 0
 	total_coins += final_coins
-	if mission_progress >= mission_target:
-		total_coins += 120
+	total_coins += mission_bonus
+	lifetime_coins += final_coins + mission_bonus
+	completed_runs += 1
+	best_distance = maxi(best_distance, int(distance))
 	save_progress()
+	update_profile_ui()
+	save_cloud_profile()
+	submit_lifetime_scores()
 	result_title.text = title
-	result_detail.text = "Distance %dm   Coins +%d\nMission %d/%d   Press R to retry" % [int(distance), final_coins, mission_progress, mission_target]
+	result_detail.text = "Distance %dm (Bonus +%d Points)   Coins +%d\nMission %d/%d   Press R to retry" % [int(distance), drive_points, final_coins, mission_progress, mission_target]
 	result_panel.visible = true
+	
+	if won:
+		result_title.add_theme_color_override("font_color", Color("#ffd34f"))
+		result_title.scale = Vector2(0.2, 0.2)
+		result_title.pivot_offset = result_title.size * 0.5
+		var tween := create_tween().set_parallel(true)
+		tween.tween_property(result_title, "scale", Vector2(1.15, 1.15), 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(result_title, "rotation", 0.08, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		
+		var tween2 := create_tween()
+		tween2.tween_interval(0.35)
+		tween2.tween_property(result_title, "rotation", -0.04, 0.25)
+		tween2.tween_property(result_title, "rotation", 0.0, 0.2)
+		
+		spawn_victory_confetti()
+		play_victory_sound()
+	else:
+		result_title.add_theme_color_override("font_color", Color("#eb5353"))
+		result_title.scale = Vector2.ONE
+		result_title.rotation = 0.0
+
 	engine_audio.stop()
 	music_audio.volume_db = -4.0
 	log_firebase_event("game_finish", {"won": won, "distance": int(distance), "coins": final_coins})
+	if won:
+		unlock_play_games_achievement(ACHIEVEMENT_FINISH_LINE)
 
 
 func recover_car() -> void:
@@ -788,6 +1002,7 @@ func recover_car() -> void:
 	damage = minf(100.0, damage + 8.0)
 	reset_player()
 	status_label.text = "RECOVERED AT CHECKPOINT"
+	repair_audio.pitch_scale = 1.0
 	repair_audio.play()
 
 
@@ -911,6 +1126,28 @@ func is_bad_road(z: float) -> bool:
 	return false
 
 
+func route_zone(z: float) -> String:
+	if z < 800.0:
+		return "MOUNTAIN"
+	if z < 1650.0:
+		return "JUNGLE"
+	if z < 2450.0:
+		return "CITY"
+	return "SNOW"
+
+
+func zone_road_color(zone: String) -> Color:
+	match zone:
+		"JUNGLE":
+			return Color("#293431")
+		"CITY":
+			return Color("#3b3e42")
+		"SNOW":
+			return Color("#46515a")
+		_:
+			return Color("#32363b")
+
+
 func road_x(z: float) -> float:
 	return sin(z * 0.0067) * 17.0 + sin(z * 0.0022 + 0.5) * 25.0
 
@@ -956,9 +1193,23 @@ func build_ui() -> void:
 	var credit := make_label(menu_root, "Music: AlexGrohl, NastelBom (Pixabay) • Kevin MacLeod (CC BY 3.0 fallback)", Vector2(620, 678), 13)
 	credit.modulate = Color(1, 1, 1, 0.72)
 
+	profile_panel = make_panel(menu_root, Vector2(620, 453), Vector2(580, 185), Color(0.02, 0.045, 0.07, 0.9))
+	var profile_title := make_label(profile_panel, "DRIVER PROFILE", Vector2(24, 12), 22)
+	profile_title.add_theme_color_override("font_color", Color("#75d7ff"))
+	var profile_stats := make_label(profile_panel, "LIFETIME COINS  %d   |   BEST  %dm   |   RUNS  %d" % [lifetime_coins, best_distance, completed_runs], Vector2(24, 44), 15)
+	profile_stats.name = "ProfileStats"
+	var profile_status := make_label(profile_panel, "Offline profile", Vector2(24, 70), 13)
+	profile_status.name = "ProfileStatus"
+	make_button(profile_panel, "PLAY GAMES", Vector2(20, 98), Vector2(165, 34), sign_in_play_games, Color("#3f8f67"))
+	make_button(profile_panel, "LEADERBOARD", Vector2(200, 98), Vector2(170, 34), show_leaderboards, Color("#496b9b"))
+	make_button(profile_panel, "ACHIEVEMENTS", Vector2(385, 98), Vector2(175, 34), show_achievements_ui, Color("#8c3f8f"))
+	make_button(profile_panel, "CHALLENGE BUDDY", Vector2(20, 138), Vector2(265, 34), challenge_buddy, Color("#4c8b67"))
+	make_button(profile_panel, "SHARE CARD", Vector2(295, 138), Vector2(265, 34), create_driver_card, Color("#8d58d6"))
+
 	garage_panel = make_panel(menu_root, Vector2(620, 85), Vector2(580, 555), Color(0.025, 0.055, 0.075, 0.95))
 	var g_title := make_label(garage_panel, "GARAGE & UPGRADES", Vector2(45, 30), 28)
 	g_title.add_theme_color_override("font_color", Color("#ffae50"))
+	make_button(garage_panel, "PREMIUM", Vector2(405, 22), Vector2(130, 48), toggle_premium_store, Color("#8d58d6"))
 	
 	var y_offset := 105.0
 	for key in ["engine", "tyres", "tank", "suspension"]:
@@ -977,6 +1228,19 @@ func build_ui() -> void:
 		
 	make_button(garage_panel, "CLOSE", Vector2(215, 485), Vector2(150, 48), func() -> void: garage_panel.visible = false, Color("#526b78"))
 	garage_panel.visible = false
+
+	premium_panel = make_panel(menu_root, Vector2(590, 45), Vector2(650, 625), Color(0.018, 0.035, 0.055, 0.98))
+	var premium_title := make_label(premium_panel, "PREMIUM MOTOR CLUB", Vector2(38, 25), 31)
+	premium_title.add_theme_color_override("font_color", Color("#d5a8ff"))
+	make_label(premium_panel, "Permanent unlocks via Google Play", Vector2(40, 65), 16)
+	add_store_product_row(premium_panel, PRODUCT_RALLY, "RALLY TITAN SUV", "High-clearance 4x4 with premium gold finish", 112, Color("#d99a2b"))
+	add_store_product_row(premium_panel, PRODUCT_VELOCITY, "VELOCITY GT", "Low, fast grand-tourer with neon trim", 242, Color("#3ba9d8"))
+	add_store_product_row(premium_panel, PRODUCT_GARAGE, "MAX GARAGE PACK", "Max engine, tyres, tank and suspension", 372, Color("#9b63dc"))
+	make_button(premium_panel, "RESTORE PURCHASES", Vector2(38, 520), Vector2(250, 55), restore_purchases, Color("#426579"))
+	make_button(premium_panel, "CLOSE", Vector2(455, 520), Vector2(155, 55), toggle_premium_store, Color("#526b78"))
+	var store_status := make_label(premium_panel, "Connecting to Google Play...", Vector2(40, 585), 14)
+	store_status.name = "StoreStatus"
+	premium_panel.visible = false
 
 	hud_root = Control.new()
 	hud_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1092,6 +1356,7 @@ func show_menu() -> void:
 	var wallet := menu_root.find_child("Wallet", true, false) as Label
 	if wallet:
 		wallet.text = "COINS  %d" % total_coins
+	update_profile_ui()
 	if is_instance_valid(engine_audio):
 		engine_audio.stop()
 	if is_instance_valid(menu_music_audio) and not menu_music_audio.playing:
@@ -1118,6 +1383,366 @@ func toggle_garage() -> void:
 			update_garage_ui()
 
 
+func add_store_product_row(parent: Control, product_id: String, title: String, description: String, y: float, accent: Color) -> void:
+	var card := make_panel(parent, Vector2(38, y), Vector2(574, 112), Color(0.04, 0.065, 0.09, 0.96))
+	var title_label := make_label(card, title, Vector2(20, 14), 21)
+	title_label.add_theme_color_override("font_color", accent.lightened(0.2))
+	make_label(card, description, Vector2(20, 46), 13)
+	var price := make_label(card, "Loading price...", Vector2(20, 76), 14)
+	price.name = product_id + "_price"
+	var buy := make_button(card, "BUY", Vector2(435, 29), Vector2(118, 55), func() -> void: store_product_pressed(product_id), accent)
+	buy.name = product_id + "_button"
+	buy.disabled = true
+
+
+func toggle_premium_store() -> void:
+	if not is_instance_valid(premium_panel):
+		return
+	premium_panel.visible = not premium_panel.visible
+	if premium_panel.visible:
+		garage_panel.visible = false
+		update_store_ui()
+
+
+func initialize_billing() -> void:
+	billing_client = BillingClient.new()
+	add_child(billing_client)
+	billing_client.connected.connect(_on_billing_connected)
+	billing_client.connect_error.connect(_on_billing_error)
+	billing_client.query_product_details_response.connect(_on_product_details)
+	billing_client.query_purchases_response.connect(_on_query_purchases)
+	billing_client.on_purchase_updated.connect(_on_purchase_updated)
+	billing_client.start_connection()
+	if not OS.has_feature("android"):
+		set_store_status("Google Play purchases are available on Android builds")
+
+
+func _on_billing_connected() -> void:
+	billing_ready = true
+	set_store_status("Google Play connected")
+	billing_client.query_purchases(BillingClient.ProductType.INAPP)
+	billing_client.query_product_details(PackedStringArray(PREMIUM_PRODUCTS), BillingClient.ProductType.INAPP)
+
+
+func _on_billing_error(code: int, message: String) -> void:
+	billing_ready = false
+	set_store_status("Google Play unavailable (%d): %s" % [code, message])
+
+
+func _on_product_details(result: Dictionary) -> void:
+	if int(result.get("response_code", -1)) != BillingClient.BillingResponseCode.OK:
+		set_store_status("Could not load products from Google Play")
+		return
+	for product in result.get("product_details", []):
+		var product_id := str(product.get("product_id", ""))
+		var formatted_price := "Buy"
+		for offer in product.get("one_time_purchase_offer_details_list", []):
+			formatted_price = str(offer.get("formatted_price", formatted_price))
+			break
+		store_prices[product_id] = formatted_price
+	update_store_ui()
+
+
+func purchase_product(product_id: String) -> void:
+	if owned_products.get(product_id, false):
+		return
+	if not billing_ready:
+		set_store_status("Connect to Google Play before purchasing")
+		return
+	var result := billing_client.purchase(product_id)
+	if int(result.get("response_code", -1)) != BillingClient.BillingResponseCode.OK:
+		set_store_status("Purchase could not start: %s" % str(result.get("debug_message", "Try again")))
+
+
+func store_product_pressed(product_id: String) -> void:
+	if product_id == PRODUCT_RALLY and owned_products.get(product_id, false):
+		select_premium_car("rally")
+	elif product_id == PRODUCT_VELOCITY and owned_products.get(product_id, false):
+		select_premium_car("velocity")
+	else:
+		purchase_product(product_id)
+
+
+func restore_purchases() -> void:
+	if billing_ready:
+		set_store_status("Restoring purchases...")
+		billing_client.query_purchases(BillingClient.ProductType.INAPP)
+	else:
+		set_store_status("Google Play is not connected")
+
+
+func _on_query_purchases(result: Dictionary) -> void:
+	if int(result.get("response_code", -1)) != BillingClient.BillingResponseCode.OK:
+		set_store_status("Restore failed: %s" % str(result.get("debug_message", "Try again")))
+		return
+	for purchase in result.get("purchases", []):
+		process_purchase(purchase)
+	set_store_status("Purchases restored")
+
+
+func _on_purchase_updated(result: Dictionary) -> void:
+	if int(result.get("response_code", -1)) != BillingClient.BillingResponseCode.OK:
+		set_store_status("Purchase cancelled or unavailable")
+		return
+	for purchase in result.get("purchases", []):
+		process_purchase(purchase)
+
+
+func process_purchase(purchase: Dictionary) -> void:
+	if int(purchase.get("purchase_state", 0)) != BillingClient.PurchaseState.PURCHASED:
+		set_store_status("Purchase pending payment confirmation")
+		return
+	for product_id_value in purchase.get("product_ids", []):
+		var product_id := str(product_id_value)
+		if product_id in PREMIUM_PRODUCTS:
+			grant_product(product_id)
+	if not bool(purchase.get("is_acknowledged", false)):
+		billing_client.acknowledge_purchase(str(purchase.get("purchase_token", "")))
+
+
+func grant_product(product_id: String) -> void:
+	owned_products[product_id] = true
+	if product_id == PRODUCT_GARAGE:
+		for key in upgrades:
+			upgrades[key] = 3
+	elif selected_car == "standard":
+		selected_car = "rally" if product_id == PRODUCT_RALLY else "velocity"
+	save_progress()
+	refresh_player_car()
+	update_store_ui()
+	update_garage_ui()
+	set_store_status("Unlocked permanently")
+	log_firebase_event("premium_unlock", {"product_id": product_id})
+
+
+func select_premium_car(car_id: String) -> void:
+	var product_id := PRODUCT_RALLY if car_id == "rally" else PRODUCT_VELOCITY
+	if not owned_products.get(product_id, false):
+		purchase_product(product_id)
+		return
+	selected_car = car_id
+	save_progress()
+	refresh_player_car()
+	update_store_ui()
+
+
+func selected_car_type() -> String:
+	if selected_car == "rally":
+		return "premium_rally"
+	if selected_car == "velocity":
+		return "premium_velocity"
+	return "suv"
+
+
+func selected_car_color() -> Color:
+	if selected_car == "rally":
+		return Color("#d79a28")
+	if selected_car == "velocity":
+		return Color("#20a6d8")
+	return Color("#f38b2d")
+
+
+func refresh_player_car() -> void:
+	if not is_instance_valid(player):
+		return
+	if is_instance_valid(car_visual):
+		car_visual.free()
+	wheel_nodes.clear()
+	front_wheel_nodes.clear()
+	car_visual = create_vehicle(selected_car_color(), selected_car_type(), true)
+	player.add_child(car_visual)
+
+
+func update_store_ui() -> void:
+	if not is_instance_valid(premium_panel):
+		return
+	for product_id in PREMIUM_PRODUCTS:
+		var owned := bool(owned_products.get(product_id, false))
+		var price := premium_panel.find_child(product_id + "_price", true, false) as Label
+		var button := premium_panel.find_child(product_id + "_button", true, false) as Button
+		if price:
+			price.text = "OWNED FOREVER" if owned else str(store_prices.get(product_id, "Google Play"))
+		if button:
+			button.disabled = (not billing_ready and not owned)
+			if owned and product_id == PRODUCT_RALLY:
+				button.text = "SELECTED" if selected_car == "rally" else "SELECT"
+				button.disabled = selected_car == "rally"
+			elif owned and product_id == PRODUCT_VELOCITY:
+				button.text = "SELECTED" if selected_car == "velocity" else "SELECT"
+				button.disabled = selected_car == "velocity"
+			elif owned:
+				button.text = "MAXED"
+				button.disabled = true
+			else:
+				button.text = "BUY"
+
+
+func set_store_status(message: String) -> void:
+	if is_instance_valid(premium_panel):
+		var label := premium_panel.find_child("StoreStatus", true, false) as Label
+		if label:
+			label.text = message
+
+
+func initialize_play_games() -> void:
+	if not OS.has_feature("android"):
+		set_profile_status("Play Games connects in the Google Play build")
+		return
+	if GodotPlayGameServices.initialize() != GodotPlayGameServices.PlayGamesPluginError.OK:
+		set_profile_status("Play Games plugin unavailable")
+		return
+	play_games_sign_in = PlayGamesSignInClient.new()
+	play_games_leaderboards = PlayGamesLeaderboardsClient.new()
+	play_games_snapshots = PlayGamesSnapshotsClient.new()
+	play_games_achievements = PlayGamesAchievementsClient.new()
+	play_games_players = PlayGamesPlayersClient.new()
+	add_child(play_games_sign_in)
+	add_child(play_games_leaderboards)
+	add_child(play_games_snapshots)
+	add_child(play_games_achievements)
+	add_child(play_games_players)
+	play_games_sign_in.user_authenticated.connect(_on_play_games_authenticated)
+	play_games_snapshots.game_loaded.connect(_on_cloud_profile_loaded)
+	play_games_snapshots.game_saved.connect(_on_cloud_profile_saved)
+	play_games_players.player_searched.connect(_on_player_searched)
+	play_games_sign_in.is_authenticated()
+
+
+func unlock_play_games_achievement(id: String) -> void:
+	if play_games_ready and is_instance_valid(play_games_achievements) and not id.begins_with("REPLACE_"):
+		play_games_achievements.unlock_achievement(id)
+
+
+func sign_in_play_games() -> void:
+	if is_instance_valid(play_games_sign_in):
+		set_profile_status("Signing in to Google Play Games...")
+		play_games_sign_in.sign_in()
+	else:
+		set_profile_status("Install the game from the Play test link to sign in")
+
+
+func _on_play_games_authenticated(authenticated: bool) -> void:
+	play_games_ready = authenticated
+	if authenticated:
+		set_profile_status("Google Play Games connected")
+		play_games_snapshots.load_game(CLOUD_SAVE_NAME, true)
+		submit_lifetime_scores()
+	else:
+		set_profile_status("Play Games sign-in required")
+
+
+func submit_lifetime_scores() -> void:
+	if not play_games_ready or not is_instance_valid(play_games_leaderboards):
+		return
+	if not LEADERBOARD_LIFETIME_COINS.begins_with("REPLACE_"):
+		play_games_leaderboards.submit_score(LEADERBOARD_LIFETIME_COINS, lifetime_coins)
+	if not LEADERBOARD_BEST_DISTANCE.begins_with("REPLACE_"):
+		play_games_leaderboards.submit_score(LEADERBOARD_BEST_DISTANCE, best_distance)
+
+
+func show_leaderboards() -> void:
+	if play_games_ready and is_instance_valid(play_games_leaderboards):
+		play_games_leaderboards.show_all_leaderboards()
+	else:
+		sign_in_play_games()
+
+
+func show_achievements_ui() -> void:
+	if play_games_ready and is_instance_valid(play_games_achievements):
+		play_games_achievements.show_achievements()
+	else:
+		sign_in_play_games()
+
+
+func challenge_buddy() -> void:
+	if play_games_ready and is_instance_valid(play_games_players):
+		play_games_players.search_player()
+	else:
+		sign_in_play_games()
+
+
+func _on_player_searched(friend) -> void:
+	if play_games_ready and is_instance_valid(play_games_players) and friend:
+		play_games_players.compare_profile(friend.player_id)
+
+
+func save_cloud_profile() -> void:
+	if not play_games_ready or not is_instance_valid(play_games_snapshots):
+		return
+	var payload := JSON.stringify({
+		"lifetime_coins": lifetime_coins,
+		"best_distance": best_distance,
+		"completed_runs": completed_runs
+	})
+	play_games_snapshots.save_game(CLOUD_SAVE_NAME, "VRL Mountain Driver lifetime profile", payload.to_utf8_buffer(), 0, lifetime_coins)
+
+
+func _on_cloud_profile_loaded(snapshot: PlayGamesSnapshot) -> void:
+	if snapshot:
+		var parsed = JSON.parse_string(snapshot.content.get_string_from_utf8())
+		if parsed is Dictionary:
+			lifetime_coins = maxi(lifetime_coins, int(parsed.get("lifetime_coins", 0)))
+			best_distance = maxi(best_distance, int(parsed.get("best_distance", 0)))
+			completed_runs = maxi(completed_runs, int(parsed.get("completed_runs", 0)))
+			save_progress()
+	update_profile_ui()
+	save_cloud_profile()
+	submit_lifetime_scores()
+
+
+func _on_cloud_profile_saved(saved: bool, _save_name: String, _description: String) -> void:
+	set_profile_status("Profile synced with Google Play" if saved else "Cloud sync will retry later")
+
+
+func update_profile_ui() -> void:
+	if not is_instance_valid(profile_panel):
+		return
+	var stats := profile_panel.find_child("ProfileStats", true, false) as Label
+	if stats:
+		stats.text = "LIFETIME COINS  %d   |   BEST  %dm   |   RUNS  %d" % [lifetime_coins, best_distance, completed_runs]
+
+
+func set_profile_status(message: String) -> void:
+	if is_instance_valid(profile_panel):
+		var label := profile_panel.find_child("ProfileStatus", true, false) as Label
+		if label:
+			label.text = message
+
+
+func create_driver_card() -> void:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1080, 1080)
+	viewport.transparent_bg = false
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(viewport)
+	var root := Control.new()
+	root.size = Vector2(1080, 1080)
+	viewport.add_child(root)
+	var background := ColorRect.new()
+	background.color = Color("#071724")
+	background.size = root.size
+	root.add_child(background)
+	var card := make_panel(root, Vector2(70, 70), Vector2(940, 940), Color("#102f43"))
+	var title := make_label(card, "VRL MOUNTAIN DRIVER", Vector2(70, 75), 58)
+	title.add_theme_color_override("font_color", Color("#ffae50"))
+	make_label(card, "LEGENDARY DRIVER CARD", Vector2(72, 150), 30)
+	var badge := make_label(card, "LIFETIME\n%d\nCOINS" % lifetime_coins, Vector2(90, 270), 70)
+	badge.add_theme_color_override("font_color", Color("#ffd34f"))
+	make_label(card, "BEST DISTANCE   %d m" % best_distance, Vector2(90, 610), 38)
+	make_label(card, "ROUTES COMPLETED   %d" % completed_runs, Vector2(90, 675), 38)
+	make_label(card, "CAR   %s" % selected_car.to_upper(), Vector2(90, 740), 38)
+	make_label(card, "Can you beat my mountain record?", Vector2(90, 840), 30)
+	await RenderingServer.frame_post_draw
+	var image := viewport.get_texture().get_image()
+	var path := "user://mountain_driver_share_card.png"
+	if image.save_png(path) == OK:
+		DisplayServer.clipboard_set("VRL Mountain Driver: %d lifetime coins and %dm best distance!" % [lifetime_coins, best_distance])
+		set_profile_status("Driver card created; caption copied")
+	else:
+		set_profile_status("Could not create driver card")
+	viewport.queue_free()
+
+
 func buy_upgrade(key: String) -> void:
 	var costs: Array[int] = [120, 220, 360]
 	var level: int = upgrades[key]
@@ -1129,8 +1754,11 @@ func buy_upgrade(key: String) -> void:
 		var wallet := menu_root.find_child("Wallet", true, false) as Label
 		if wallet:
 			wallet.text = "COINS  %d" % total_coins
+		repair_audio.pitch_scale = 1.0
 		repair_audio.play()
 		log_firebase_event("garage_upgrade", {"item": key, "level": upgrades[key]})
+		if upgrades[key] == 3:
+			unlock_play_games_achievement(ACHIEVEMENT_UPGRADE_KING)
 
 
 func update_garage_ui() -> void:
@@ -1244,11 +1872,34 @@ func update_gear_ui() -> void:
 				style_r.border_color = Color("#eb5353").lightened(0.2)
 
 
+func check_daily_reward() -> void:
+	var date_dict := Time.get_date_dict_from_system()
+	var current_date_str := "%d-%02d-%02d" % [date_dict.year, date_dict.month, date_dict.day]
+	if last_daily_reward_date != current_date_str:
+		last_daily_reward_date = current_date_str
+		total_coins += 25
+		lifetime_coins += 25
+		save_progress()
+		call_deferred("show_daily_reward_message")
+
+
+func show_daily_reward_message() -> void:
+	set_profile_status("Daily login reward: +25 COINS!")
+	spawn_floating_text("+25 DAILY COINS", Color("#ffd34f"), Vector3(0, 2, 8))
+
+
 func save_progress() -> void:
 	var config := ConfigFile.new()
 	config.set_value("player", "coins", total_coins)
+	config.set_value("player", "lifetime_coins", lifetime_coins)
+	config.set_value("player", "completed_runs", completed_runs)
+	config.set_value("player", "best_distance", best_distance)
+	config.set_value("player", "selected_car", selected_car)
+	config.set_value("player", "last_daily_reward_date", last_daily_reward_date)
 	for key in upgrades:
 		config.set_value("upgrades", key, upgrades[key])
+	for product_id in owned_products:
+		config.set_value("premium", product_id, owned_products[product_id])
 	config.save(SAVE_PATH)
 
 
@@ -1257,8 +1908,15 @@ func load_progress() -> void:
 	if config.load(SAVE_PATH) != OK:
 		return
 	total_coins = int(config.get_value("player", "coins", 0))
+	lifetime_coins = int(config.get_value("player", "lifetime_coins", total_coins))
+	completed_runs = int(config.get_value("player", "completed_runs", 0))
+	best_distance = int(config.get_value("player", "best_distance", 0))
+	selected_car = str(config.get_value("player", "selected_car", "standard"))
+	last_daily_reward_date = str(config.get_value("player", "last_daily_reward_date", ""))
 	for key in upgrades:
 		upgrades[key] = int(config.get_value("upgrades", key, 0))
+	for product_id in owned_products:
+		owned_products[product_id] = bool(config.get_value("premium", product_id, false))
 
 
 func make_panel(parent: Control, position: Vector2, size: Vector2, color: Color) -> Panel:
@@ -1496,6 +2154,66 @@ func update_floating_texts(delta: float) -> void:
 		if is_instance_valid(entry.label):
 			entry.label.queue_free()
 	floating_texts = floating_texts.filter(func(x): return x.life > 0.0)
+
+
+func _on_fcm_token_received(token: String) -> void:
+	print("[FCM] Token received: ", token)
+	set_profile_status("FCM push notifications active")
+
+
+func _on_notification_received(title: String, body: String) -> void:
+	print("[FCM] Message received: ", title, " - ", body)
+	if is_instance_valid(player):
+		spawn_floating_text("ALERT: " + title, Color("#ffae50"), player.global_position + Vector3(0, 2.8, 0))
+
+
+func spawn_victory_confetti() -> void:
+	var colors := [
+		Color("#ff3b30"), Color("#4cd964"), Color("#ffcc00"), 
+		Color("#5ac8fa"), Color("#007aff"), Color("#5856d6"), 
+		Color("#ff2d55"), Color("#ffd34f")
+	]
+	for index in range(75):
+		var piece := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(rng.randf_range(0.12, 0.25), rng.randf_range(0.12, 0.25), rng.randf_range(0.04, 0.1))
+		piece.mesh = mesh
+		piece.position = player.position + Vector3(rng.randf_range(-1.5, 1.5), rng.randf_range(0.5, 1.8), rng.randf_range(-1.0, 1.0))
+		piece.material_override = make_material(colors.pick_random(), 0.2, 2.0)
+		add_child(piece)
+		
+		var vel := Vector3(
+			rng.randf_range(-6.5, 6.5), 
+			rng.randf_range(6.0, 14.0), 
+			rng.randf_range(-6.5, 6.5)
+		)
+		effects.append({
+			"node": piece, 
+			"velocity": vel, 
+			"life": rng.randf_range(2.0, 3.5), 
+			"is_confetti": true
+		})
+
+
+func play_victory_sound() -> void:
+	checkpoint_audio.pitch_scale = 1.0
+	checkpoint_audio.play()
+	
+	var timer := get_tree().create_timer(0.2)
+	timer.timeout.connect(func():
+		pickup_audio.pitch_scale = 1.3
+		pickup_audio.play()
+		var timer2 := get_tree().create_timer(0.15)
+		timer2.timeout.connect(func():
+			pickup_audio.pitch_scale = 1.6
+			pickup_audio.play()
+			var timer3 := get_tree().create_timer(0.15)
+			timer3.timeout.connect(func():
+				repair_audio.pitch_scale = 1.4
+				repair_audio.play()
+			)
+		)
+	)
 
 
 func log_firebase_event(event_name: String, params: Dictionary = {}) -> void:

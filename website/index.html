@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRL Mountain Driver 3D - Official Landing Page</title>
+    <meta name="description" content="Experience high-octane 3D driving. Complete missions, challenge buddies via Play Games Services, and claim daily rewards in VRL Mountain Driver 3D.">
+    <!-- Favicon link referencing local app-icon.png -->
+    <link rel="icon" type="image/png" href="app-icon.png">
+    
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary-accent: #ff9a31;
+            --primary-glow: rgba(255, 154, 49, 0.35);
+            --secondary-accent: #ffd34f;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Modern Gradient Background Grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(255, 154, 49, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(255, 211, 79, 0.06) 0%, transparent 40%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Header Navigation */
+        header {
+            width: 100%;
+            padding: 20px 8%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(11, 15, 25, 0.8);
+        }
+
+        .logo {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--text-main);
+            text-decoration: none;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo img {
+            height: 36px;
+            width: 36px;
+            border-radius: 8px;
+            box-shadow: 0 0 12px var(--primary-glow);
+        }
+
+        .logo span {
+            color: var(--primary-accent);
+            text-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 28px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+
+        nav a:hover {
+            color: var(--primary-accent);
+        }
+
+        /* Hero Section */
+        .hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 100px 5% 60px 5%;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .hero h1 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 3.8rem;
+            line-height: 1.15;
+            margin-bottom: 24px;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #ffffff 40%, #ffc078 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: titleFade 1.2s ease-out;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 680px;
+            margin-bottom: 30px;
+            animation: subtitleFade 1.4s ease-out;
+        }
+
+        /* Play Store Badge Container */
+        .cta-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 50px;
+            animation: btnFade 1.6s ease-out;
+        }
+
+        .play-store-badge {
+            transition: transform 0.2s cubic-bezier(0.165, 0.84, 0.44, 1);
+            display: inline-block;
+        }
+
+        .play-store-badge img {
+            height: 60px;
+            display: block;
+        }
+
+        .play-store-badge:hover {
+            transform: scale(1.04);
+        }
+
+        .learn-more-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.3s ease;
+            margin-top: 8px;
+            border-bottom: 1px dashed rgba(255,255,255,0.2);
+            padding-bottom: 2px;
+        }
+
+        .learn-more-link:hover {
+            color: var(--primary-accent);
+            border-color: var(--primary-accent);
+        }
+
+        /* Features Section */
+        .features-section {
+            padding: 80px 8%;
+            background: rgba(8, 12, 20, 0.4);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 60px auto;
+        }
+
+        .section-header h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .section-header p {
+            color: var(--text-muted);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 32px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 36px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(8px);
+        }
+
+        .feature-card:hover {
+            border-color: rgba(255, 154, 49, 0.25);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+
+        .feature-icon {
+            font-size: 2.2rem;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        .feature-card h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Footer Details */
+        footer {
+            padding: 60px 8% 40px 8%;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            background: #060910;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 40px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+
+        .footer-links a:hover {
+            color: var(--primary-accent);
+        }
+
+        .copyright {
+            font-size: 0.85rem;
+            color: rgba(156, 163, 175, 0.45);
+            text-align: center;
+        }
+
+        /* Animations */
+        @keyframes titleFade {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes subtitleFade {
+            0% { opacity: 0; transform: translateY(15px); }
+            80% { opacity: 0; }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes btnFade {
+            0% { opacity: 0; transform: scale(0.95); }
+            85% { opacity: 0; }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.6rem;
+            }
+            .hero p {
+                font-size: 1.05rem;
+            }
+            header {
+                padding: 20px 5%;
+            }
+            nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header>
+        <a href="#" class="logo" id="headerLogo">
+            <img src="app-icon.png" alt="Game Logo">
+            VRL Mountain Driver <span>3D</span>
+        </a>
+        <nav id="navbarLinks">
+            <a href="#features">Features</a>
+            <a href="/privacy.html">Privacy Policy</a>
+        </nav>
+    </header>
+
+    <!-- Hero Area -->
+    <main class="hero" id="mainHero">
+        <h1>High-Octane 3D Mountain Driving</h1>
+        <p>Challenge buddies on Google Play Games, unlock legendary custom upgrades, and claim daily reward bonuses in the ultimate offroad simulation.</p>
+        
+        <div class="cta-group" id="ctaGroup">
+            <!-- Install Now text -->
+            <span style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 2px; color: var(--primary-accent); font-weight: 700; margin-bottom: -4px;">Install Now</span>
+            <!-- Google Play Store Badge Install Button -->
+            <a href="https://play.google.com/store/apps/details?id=com.vrlpro.mountaindriver3d" target="_blank" rel="noopener noreferrer" class="play-store-badge" id="downloadBadgeBtn">
+                <img src="google-play-badge.png" alt="Get it on Google Play">
+            </a>
+            <a href="#features" class="learn-more-link" id="learnMoreBtn">
+                Explore Game Features
+            </a>
+        </div>
+    </main>
+
+    <!-- Features Container -->
+    <section class="features-section" id="features">
+        <div class="section-header" id="featuresHeader">
+            <h2>Experience Offroad Driving</h2>
+            <p>Every corner is a challenge. Master mechanics and complete targets on treacherous roads.</p>
+        </div>
+        
+        <div class="features-grid" id="featuresGrid">
+            <!-- Card 1 -->
+            <div class="feature-card" id="featCardBuddy">
+                <span class="feature-icon">🎮</span>
+                <h3>Buddy Challenges</h3>
+                <p>Search and compare profiles directly with your Google Play Games friends. Challenge your buddy and beat their records.</p>
+            </div>
+            <!-- Card 2 -->
+            <div class="feature-card" id="featCardReward">
+                <span class="feature-icon">💰</span>
+                <h3>Daily Rewards</h3>
+                <p>Log in daily to claim 25 free coins. Collect mileage bonuses based on distance driven to upgrade your suspension, tyres, and engine.</p>
+            </div>
+            <!-- Card 3 -->
+            <div class="feature-card" id="featCardPush">
+                <span class="feature-icon">🔔</span>
+                <h3>Push Notifications</h3>
+                <p>Never miss dynamic updates, events, or exclusive garage upgrades. FCM notification pushes keep you connected.</p>
+            </div>
+            <!-- Card 4 -->
+            <div class="feature-card" id="featCardVisuals">
+                <span class="feature-icon">🎇</span>
+                <h3>Juicy Celebrations</h3>
+                <p>Celebrate finish lines with colorful 3D physics confetti, pitch-shifted audio fanfare, and animated bounce-pop details.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer id="mainFooter">
+        <div class="footer-links" id="footerLinks">
+            <a href="#">Back to Top</a>
+            <a href="/privacy.html">Privacy Policy</a>
+        </div>
+        <p class="copyright" id="footerCopyright">
+            &copy; 2026 VRL PRO DIGITAL. All rights reserved. VRL Mountain Driver 3D is a trademark of VRL PRO.
+        </p>
+    </footer>
+
+</body>
+</html>

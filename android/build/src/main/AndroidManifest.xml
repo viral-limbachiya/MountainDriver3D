@@ -15,6 +15,10 @@
         android:glEsVersion="0x00030000"
         android:required="true" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="@string/godot_project_name_string"
         android:allowBackup="false"
@@ -29,6 +33,20 @@
         <meta-data
             android:name="org.godotengine.plugin.v1.FirebaseAnalyticsBridge"
             android:value="com.godot.game.FirebaseAnalyticsBridge" />
+
+        <!-- Firebase Messaging Godot Java Bridge -->
+        <meta-data
+            android:name="org.godotengine.plugin.v1.FirebaseMessagingBridge"
+            android:value="com.godot.game.FirebaseMessagingBridge" />
+
+        <!-- Firebase Messaging Service -->
+        <service
+            android:name="com.godot.game.MyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
         <profileable
             android:shell="true"
             android:enabled="true"
@@ -41,7 +59,7 @@
             android:excludeFromRecents="false"
             android:exported="false"
             android:supportsPictureInPicture="true"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:resizeableActivity="false"

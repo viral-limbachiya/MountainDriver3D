@@ -15,6 +15,10 @@ run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/app-icon.png"
 
+[autoload]
+
+GodotPlayGameServices="*uid://bm3f1038rlayg"
+
 [display]
 
 window/size/viewport_width=1280
@@ -22,6 +26,11 @@ window/size/viewport_height=720
 window/size/window_width_override=960
 window/size/window_height_override=540
 window/stretch/mode="canvas_items"
+window/handheld/orientation="landscape"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/GodotGooglePlayBilling/plugin.cfg", "res://addons/GodotPlayGameServices/plugin.cfg")
 
 [input]
 

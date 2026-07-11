@@ -96,6 +96,7 @@ dependencies {
     // Firebase BoM and Analytics
     implementation platform('com.google.firebase:firebase-bom:32.8.0')
     implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-messaging'
 
     // .NET dependencies
     String jar = '../../../../modules/mono/thirdparty/libSystem.Security.Cryptography.Native.Android.jar'
@@ -129,7 +130,7 @@ android {
         }
 
         ndk {
-            debugSymbolLevel 'NONE'
+            debugSymbolLevel 'SYMBOL_TABLE'
             String[] export_abi_list = getExportEnabledABIs()
             abiFilters export_abi_list
         }

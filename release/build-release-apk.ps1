@@ -1,0 +1,77 @@
+$ErrorActionPreference = "Stop"
+
+$project = Split-Path -Parent $PSScriptRoot
+$godot = "C:\Users\Viral L\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe"
+$keystore = "$project\signing_backup\mountain-driver-release.keystore"
+$output = Join-Path $project "builds\android\VRL-Mountain-Driver-3D-release.apk"
+$alias = "mountaindriver"
+$androidTemplate = Join-Path $project "android\build"
+
+if (-not (Test-Path -LiteralPath $godot)) {
+    throw "Godot was not found at: $godot"
+}
+
+# Fallback to home Documents directory if backup keystore is missing
+if (-not (Test-Path -LiteralPath $keystore)) {
+    $keystore = "$HOME\Documents\MountainDriver-Signing\mountain-driver-release.keystore"
+}
+
+if (-not (Test-Path -LiteralPath $keystore)) {
+    throw "Release keystore was not found at: $keystore"
+}
+
+New-Item -ItemType Directory -Path (Split-Path -Parent $output) -Force | Out-Null
+
+$securePassword = Read-Host "Enter the VRL PRO release-key password" -AsSecureString
+$passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+
+try {
+    $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+
+    # Set Java and Keystore environment variables for Godot build pipeline
+    $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $keystore
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $alias
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $plainPassword
+
+    $godotArguments = @(
+        "--headless",
+        "--path", $project
+    )
+
+    if (-not (Test-Path -LiteralPath $androidTemplate)) {
+        $godotArguments += "--install-android-build-template"
+    }
+
+    $godotArguments += @(
+        "--export-release", "Android Test",
+        $output
+    )
+
+    Write-Host "Exporting signed release APK to $output..."
+    & $godot @godotArguments
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot export failed with exit code $LASTEXITCODE."
+    }
+
+    if (-not (Test-Path -LiteralPath $output)) {
+        throw "The APK was not created."
+    }
+
+    Write-Host "Success! Signed release APK generated:"
+    Get-Item -LiteralPath $output |
+        Select-Object FullName, Length, LastWriteTime
+}
+finally {
+    # Clean up sensitive env variables
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $null
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $null
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $null
+    $plainPassword = $null
+    $securePassword = $null
+
+    if ($passwordPointer -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+    }
+}
