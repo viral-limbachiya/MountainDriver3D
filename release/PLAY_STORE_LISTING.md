@@ -10,45 +10,43 @@ This file contains the metadata, description texts, and release notes to configu
 ---
 
 ## 📝 Short Description (Max 80 characters)
-`Climb dangerous mountain roads, challenge your buddies, and claim daily rewards!`
+`Drive, drift, and survive challenging mountain roads with realistic 3D physics!`
 
 ---
 
 ## 📖 Full Description (Max 4000 characters)
 
-Take control of a rugged mountain SUV and conquer roads where every turn is a challenge. 
+Embark on the ultimate offroad driving adventure! Take control of a rugged, powerful SUV and conquer steep mountain passes, winding highway bends, and treacherous road cliffs where every split-second decision counts. 
 
-VRL Mountain Driver 3D combines climbing roads, dangerous cliffs, moving traffic, broken asphalt, fuel management, and vehicle damage in a high-octane 3D offroad adventure.
+VRL Mountain Driver 3D combines realistic physically-based vehicle handling with dynamic environmental hazards to deliver a high-octane 3D driving simulation. 
 
-Drive carefully through dynamic weather conditions including clear skies, heavy fog, and pouring rain. Avoid oncoming traffic, barriers, falling rocks, deep potholes, and muddy tracks. Collect fuel canisters, repair kits, and coin bonuses, pass checkpoints, and upgrade your vehicle to reach your destination.
+Master the art of throttle and steering as you navigate steep climbs and valleys. Manage your fuel levels, avoid critical vehicle damage, and pass checkpoints to complete your journey. Upgrade your ride in the garage to handle tougher terrain and climb the rankings!
 
-Now integrated with Google Play Games, you can challenge your friends directly and see who is the ultimate offroad driver!
+### 🌲 EXCITING GAMEPLAY FEATURES:
 
-### 🌟 KEY FEATURES:
+*   🚘 **Realistic Car Physics:** Experience physically-based vehicle suspension, tyre traction, chassis roll, and weight distribution as you speed around tight curves.
+*   🛤️ **Dynamic Sloped Terrain:** Drive on complex, undulating mountain roads built into realistic hills, valleys, and cityscapes.
+*   🚗 **Smart Traffic AI:** Dodge oncoming trucks and traffic cars that dynamically steer, slow down, and switch lanes to avoid collisions.
+*   ⚠️ **Treacherous Hazards:** Watch out for falling rocks, deep asphalt potholes, concrete barriers, and slick mud patches that slow you down and damage your suspension.
+*   🌦️ **Dynamic Weather Biomes:** Experience shifting weather conditions in real-time, including clear skies, thick mountain fog, and heavy rain storms complete with visual particle effects.
+*   🔧 **Garage Upgrades:** Earn coins during your runs to upgrade your engine power, tyre grip, fuel tank capacity, and suspension dampening.
+*   🏆 **Google Play Games Integration:** Connect with your buddies to view their profiles, compare achievements, and compete on global leaderboards.
+*   🎁 **Daily Rewards & Login Bonuses:** Claim free coin bonuses every calendar day you log in.
 
-*   🎮 **Buddy Challenges:** Link with Google Play Games to search, select, and compare profiles directly against your buddies. Compare achievements and climb the leaderboards to prove your skills!
-*   💰 **Daily Logins & Rewards:** Claim your daily login reward of 25 coins every calendar day. Earn gameplay distance points at the end of each run to purchase custom garage upgrades.
-*   🔧 **Garage Customization:** Upgrade your engine, suspension, tyres, and fuel tank capacity using your collected coins. Max out your levels to unlock special achievements.
-*   🚧 **Dynamic Obstacles:** Navigate a variety of hazards including rocks, potholes, barriers, mud, and active traffic. Watch out for oncoming trucks!
-*   🌧️ **Adaptive Weather:** Experience multiple visual conditions like clear daylight, thick mountain fog, and heavy rain that affect driving visibility.
-*   🎉 **Juicy Celebrations:** Cross the finish line to activate visual 3D confetti physics, springy title text animations, and custom pitch-shifted victory audio fanfare.
-*   🔔 **Stay Connected:** Opt-in to receive background push notifications for event updates, garage specials, and game announcements.
-*   🕹️ **Optimized Mobile Play:** Responsive touch controls designed specifically for landscape play on all phone and tablet sizes. Offline play supported!
-
-Can you keep control and conquer the mountain road?
+Can you maintain control and conquer the mountain? Download VRL Mountain Driver 3D today and test your skills!
 
 ---
 
 ## 🏷️ Category & Tags
 *   **Category:** Games > Racing / Games > Simulation
-*   **Tags:** Driving, Off-road, Racing, Simulation, Single Player
+*   **Tags:** Driving, Off-road, Racing, Simulation, Single Player, Low-poly
 
 ---
 
-## 🆕 What's New in Version 1.1.0 (Version Code 4)
-*   **Buddy Challenges:** Added custom companion matching to compare achievements and profiles directly with your Google Play friends.
-*   **Daily Rewards:** Get a 25-coin bonus upon launching the game every day.
-*   **Gameplay Bonus:** Earn additional coin points based on distance driven.
-*   **Visual & Audio Juice:** Added 3D confetti physics, elastic text animations, and pitch-shifted fanfare chimes when completing a stage.
-*   **Universal Screen Support:** Fixed display scaling, orientation locks, and added sensor-landscape support for modern tablets and ultra-wide devices.
-*   **Notification Engine:** Fully integrated Firebase Cloud Messaging for custom updates.
+## 🆕 What's New in Version 1.0.5 (Version Code 6)
+*   **Graphics & Lighting Overhaul:** Upgraded to physically-based materials (glossy metallic car paint, realistic glass reflections, matte road asphalt) and ACES cinematic tonemapping.
+*   **Dynamic Sloped Terrain:** The ground and landscapes now follow the elevation and curves of the road, eliminating floating roads.
+*   **Weather Particle Effects:** Added realistic falling rain drops and high-speed wind streaks that adapt to your car's speed.
+*   **Smoother Traffic:** Improved traffic AI to change lanes smoothly instead of teleporting.
+*   **Anti-Aliasing Enabled:** Added MSAA 3D and FXAA for smoother, cleaner edges on mobile screens.
+*   **Performance Optimization:** Highly optimized for OpenGL ES 3.0 (GL Compatibility renderer) to ensure smooth 60fps gameplay on all budget and mid-range mobile devices.
