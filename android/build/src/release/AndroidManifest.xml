@@ -23,7 +23,7 @@
 <!-- Start of manifest application element contents from GodotPlayGameServices -->
 <meta-data android:name="com.google.android.gms.games.APP_ID" android:value="@string/game_services_project_id"/>
 <!-- End of manifest application element contents from GodotPlayGameServices -->
-        <activity android:name=".GodotApp" tools:replace="android:screenOrientation,android:excludeFromRecents,android:resizeableActivity" tools:node="mergeOnlyAttributes" android:excludeFromRecents="false" android:screenOrientation="landscape" android:resizeableActivity="true">
+        <activity android:name=".GodotApp" tools:replace="android:screenOrientation,android:excludeFromRecents,android:resizeableActivity" tools:node="mergeOnlyAttributes" android:excludeFromRecents="false" android:screenOrientation="sensorLandscape" android:resizeableActivity="true">
         </activity>
         <activity-alias
             tools:node="mergeOnlyAttributes"
