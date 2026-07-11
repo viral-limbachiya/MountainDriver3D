@@ -254,8 +254,8 @@ func build_road_and_scenery() -> void:
 
 		# Spawn foliage or fallen leaves on the roadside
 		if rng.randf() < 0.48:
-			var side := [-1.0, 1.0].pick_random()
-			var leaf_color := Color("#8f5127") if zone == "MOUNTAIN" else (Color("#224d20") if zone == "JUNGLE" else Color("#786c57"))
+			var side: float = [-1.0, 1.0].pick_random()
+			var leaf_color: Color = Color("#8f5127") if zone == "MOUNTAIN" else (Color("#224d20") if zone == "JUNGLE" else Color("#786c57"))
 			if zone == "SNOW":
 				leaf_color = Color("#adbfc7")
 			var leaf_pos := (a + b) * 0.5 + Vector3(cos(yaw) * side * rng.randf_range(6.8, 8.5), 0.05, -sin(yaw) * side * rng.randf_range(6.8, 8.5))
@@ -636,13 +636,13 @@ func populate_run() -> void:
 	animals.clear()
 	for i in range(8):
 		var z := rng.randf_range(250.0, ROAD_LENGTH - 200.0)
-		var side := [-1.0, 1.0].pick_random()
+		var side: float = [-1.0, 1.0].pick_random()
 		var animal_pos := Vector3(road_x(z) + side * rng.randf_range(11.0, 16.0), road_y(z), z)
 		var body := Node3D.new()
 		body.position = animal_pos
 		
 		# Random color for cow/horse/sheep
-		var c := [Color("#8a5a36"), Color("#5c4033"), Color("#d2b48c"), Color("#202020")].pick_random()
+		var c: Color = [Color("#8a5a36"), Color("#5c4033"), Color("#d2b48c"), Color("#202020")].pick_random()
 		# Torso
 		add_box(body, Vector3(0, 0.5, 0), Vector3(0.5, 0.4, 0.95), c, 0.8, 0.0)
 		# Head

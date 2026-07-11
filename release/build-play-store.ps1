@@ -2,13 +2,18 @@ $ErrorActionPreference = "Stop"
 
 $project = Split-Path -Parent $PSScriptRoot
 $godot = "C:\Users\Viral L\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe"
-$keystore = "$HOME\Documents\MountainDriver-Signing\mountain-driver-release.keystore"
+$keystore = "$project\signing_backup\mountain-driver-release.keystore"
 $output = Join-Path $project "builds\android\VRL-Mountain-Driver-3D-release.aab"
 $alias = "mountaindriver"
 $androidTemplate = Join-Path $project "android\build"
 
 if (-not (Test-Path -LiteralPath $godot)) {
     throw "Godot was not found at: $godot"
+}
+
+# Fallback to home Documents directory if backup keystore is missing
+if (-not (Test-Path -LiteralPath $keystore)) {
+    $keystore = "$HOME\Documents\MountainDriver-Signing\mountain-driver-release.keystore"
 }
 
 if (-not (Test-Path -LiteralPath $keystore)) {
@@ -23,7 +28,11 @@ $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure
 try {
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
 
-    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $keystore
+    # Copy keystore to a space-free path to avoid Gradle path-parsing bugs
+    $tempKeystore = "C:\Users\Public\temp-mountain-driver-release.keystore"
+    Copy-Item -LiteralPath $keystore -Destination $tempKeystore -Force
+
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $tempKeystore
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $alias
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $plainPassword
 
@@ -60,6 +69,8 @@ finally {
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $null
     $plainPassword = $null
     $securePassword = $null
+
+    Remove-Item -LiteralPath "C:\Users\Public\temp-mountain-driver-release.keystore" -ErrorAction SilentlyContinue
 
     if ($passwordPointer -ne [IntPtr]::Zero) {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)

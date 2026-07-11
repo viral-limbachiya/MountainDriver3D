@@ -29,9 +29,13 @@ $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure
 try {
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
 
+    # Copy keystore to a space-free path to avoid Gradle path-parsing bugs
+    $tempKeystore = "C:\Users\Public\temp-mountain-driver-release.keystore"
+    Copy-Item -LiteralPath $keystore -Destination $tempKeystore -Force
+
     # Set Java and Keystore environment variables for Godot build pipeline
     $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
-    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $keystore
+    $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $tempKeystore
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $alias
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $plainPassword
 
@@ -56,12 +60,14 @@ try {
         Select-Object Name, Length, LastWriteTime
 }
 finally {
-    # Clean up sensitive env variables
+    # Clean up sensitive env variables and temp files
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $null
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $null
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $null
     $plainPassword = $null
     $securePassword = $null
+
+    Remove-Item -LiteralPath "C:\Users\Public\temp-mountain-driver-release.keystore" -ErrorAction SilentlyContinue
 
     if ($passwordPointer -ne [IntPtr]::Zero) {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
