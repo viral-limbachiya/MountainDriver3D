@@ -52,6 +52,7 @@ var pickups: Array[Dictionary] = []
 var hazards: Array[Dictionary] = []
 var checkpoints: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
+var animals: Array[Dictionary] = []
 var bad_zones: Array[Vector2] = []
 var wheel_nodes: Array[Node3D] = []
 var front_wheel_nodes: Array[Node3D] = []
@@ -166,39 +167,51 @@ func _ready() -> void:
 func build_environment() -> void:
 	world_environment = WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("#79add0")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("#bfd7e1")
-	env.ambient_light_energy = 0.78
+	env.background_mode = Environment.BG_SKY
+	
+	var sky := Sky.new()
+	var sky_mat := ProceduralSkyMaterial.new()
+	sky_mat.sky_top_color = Color("#2e5170")
+	sky_mat.sky_horizon_color = Color("#698ea9")
+	sky_mat.ground_bottom_color = Color("#111822")
+	sky_mat.ground_horizon_color = Color("#698ea9")
+	sky_mat.sky_curve = 0.09
+	sky_mat.ground_curve = 0.08
+	sky.sky_material = sky_mat
+	env.sky = sky
+	
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.ambient_light_energy = 0.85
+	
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.08
+	env.tonemap_exposure = 1.12
 	env.tonemap_white = 1.0
+	
 	env.glow_enabled = true
-	env.glow_intensity = 0.85
-	env.glow_strength = 1.0
-	env.glow_bloom = 0.28
+	env.glow_intensity = 0.5
+	env.glow_strength = 0.95
+	env.glow_bloom = 0.15
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	
 	env.fog_enabled = true
-	env.fog_light_color = Color("#c9dde5")
-	env.fog_density = 0.002
-	env.fog_sky_affect = 0.45
+	env.fog_light_color = Color("#698ea9")
+	env.fog_density = 0.0016
+	env.fog_sky_affect = 0.35
 	world_environment.environment = env
 	add_child(world_environment)
 
 	sun = DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-48, -28, 0)
-	sun.light_color = Color("#ffe2ab")
-	sun.light_energy = 1.45
+	sun.rotation_degrees = Vector3(-35, -45, 0)
+	sun.light_color = Color("#ffe2bc")
+	sun.light_energy = 1.6
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 180.0
+	sun.shadow_bias = 0.03
+	sun.directional_shadow_max_distance = 220.0
+	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
-	# Large overlapping terrain slabs give every part of the trip its own palette.
-	add_box(self, Vector3(0, -11, 400), Vector3(340, 14, 850), Color("#52644b"))
-	add_box(self, Vector3(0, -11, 1225), Vector3(340, 14, 850), Color("#183f2c"))
-	add_box(self, Vector3(0, -11, 2050), Vector3(340, 14, 850), Color("#62635f"))
-	add_box(self, Vector3(0, -11, 2825), Vector3(340, 14, 760), Color("#d5e2e5"))
+
 
 
 func build_road_and_scenery() -> void:
@@ -220,11 +233,42 @@ func build_road_and_scenery() -> void:
 		var broken := is_bad_road(z)
 		var zone := route_zone(z)
 		var road_color := zone_road_color(zone)
+		
+		var ground_color := Color("#43663b")
+		if zone == "JUNGLE":
+			ground_color = Color("#1c3c26")
+		elif zone == "CITY":
+			ground_color = Color("#484d50")
+		elif zone == "SNOW":
+			ground_color = Color("#e9f2f5")
+
+		var ground_piece := add_box(
+			root,
+			(a + b) * 0.5 - Vector3(0, 10.375, 0),
+			Vector3(340, 20.0, delta.length() + 0.8),
+			ground_color,
+			0.95,
+			0.0
+		)
+		ground_piece.rotation = Vector3(pitch, yaw, 0)
+
+		# Spawn foliage or fallen leaves on the roadside
+		if rng.randf() < 0.48:
+			var side := [-1.0, 1.0].pick_random()
+			var leaf_color := Color("#8f5127") if zone == "MOUNTAIN" else (Color("#224d20") if zone == "JUNGLE" else Color("#786c57"))
+			if zone == "SNOW":
+				leaf_color = Color("#adbfc7")
+			var leaf_pos := (a + b) * 0.5 + Vector3(cos(yaw) * side * rng.randf_range(6.8, 8.5), 0.05, -sin(yaw) * side * rng.randf_range(6.8, 8.5))
+			var leaves := add_box(root, leaf_pos, Vector3(rng.randf_range(0.45, 1.3), 0.06, rng.randf_range(0.45, 1.3)), leaf_color, 0.9, 0.0)
+			leaves.rotation = Vector3(pitch, yaw + rng.randf_range(-0.5, 0.5), 0)
+
 		var piece := add_box(
 			root,
 			(a + b) * 0.5 - Vector3(0, 0.4, 0),
 			Vector3(ROAD_WIDTH, 0.75, delta.length() + 0.6),
-			Color("#69584d") if broken else road_color
+			Color("#69584d") if broken else road_color,
+			0.92,
+			0.0
 		)
 		piece.rotation = Vector3(pitch, yaw, 0)
 
@@ -251,10 +295,10 @@ func build_road_and_scenery() -> void:
 
 
 func add_road_mark(parent: Node3D, center: Vector3, length: float, pitch: float, yaw: float) -> void:
-	var line := add_box(parent, center + Vector3(0, 0.04, 0), Vector3(0.18, 0.05, length * 0.56), Color("#f7d968"))
+	var line := add_box(parent, center + Vector3(0, 0.04, 0), Vector3(0.18, 0.05, length * 0.56), Color("#f7d968"), 0.88, 0.0)
 	line.rotation = Vector3(pitch, yaw, 0)
 	for side in [-1.0, 1.0]:
-		var edge := add_box(parent, center + Vector3(cos(yaw) * side * 5.75, 0.04, -sin(yaw) * side * 5.75), Vector3(0.12, 0.04, length), Color(1, 1, 1, 0.75))
+		var edge := add_box(parent, center + Vector3(cos(yaw) * side * 5.75, 0.04, -sin(yaw) * side * 5.75), Vector3(0.12, 0.04, length), Color(1, 1, 1, 0.75), 0.88, 0.0)
 		edge.rotation = Vector3(pitch, yaw, 0)
 
 
@@ -299,12 +343,12 @@ func add_jungle_scenery(parent: Node3D, z: float, side: float) -> void:
 		var pos := Vector3(center_x + side * rng.randf_range(10.5, 32.0), road_y(z) - 0.8, z + rng.randf_range(-9.0, 9.0))
 		add_broadleaf_tree(parent, pos, rng.randf_range(0.8, 1.35))
 	if rng.randf() < 0.38:
-		var rock := add_box(parent, Vector3(center_x + side * 18.0, road_y(z) - 0.1, z), Vector3(3.0, 1.5, 2.3), Color("#415248"))
+		var rock := add_box(parent, Vector3(center_x + side * 18.0, road_y(z) - 0.1, z), Vector3(3.0, 1.5, 2.3), Color("#415248"), 0.95, 0.0)
 		rock.rotation_degrees = Vector3(8, rng.randf_range(0, 80), 5)
 
 
 func add_broadleaf_tree(parent: Node3D, position: Vector3, scale_factor: float) -> void:
-	add_cylinder(parent, position + Vector3(0, 2.4 * scale_factor, 0), 0.34 * scale_factor, 4.8 * scale_factor, Color("#59402c"))
+	add_cylinder(parent, position + Vector3(0, 2.4 * scale_factor, 0), 0.34 * scale_factor, 4.8 * scale_factor, Color("#59402c"), 0.94, 0.0)
 	for offset in [Vector3(0, 5.0, 0), Vector3(-1.1, 4.5, 0.3), Vector3(1.0, 4.6, -0.4)]:
 		var crown := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
@@ -323,18 +367,18 @@ func add_city_scenery(parent: Node3D, z: float, side: float) -> void:
 	var depth := rng.randf_range(7.0, 12.0)
 	var building_pos := Vector3(center_x + side * rng.randf_range(18.0, 30.0), road_y(z) - 0.5 + height * 0.5, z)
 	var facade: Color = [Color("#b66f55"), Color("#d1b06f"), Color("#8797a3"), Color("#a57c91")].pick_random()
-	add_box(parent, building_pos, Vector3(width, height, depth), facade)
+	add_box(parent, building_pos, Vector3(width, height, depth), facade, 0.72, 0.1)
 	for floor in range(2, int(height), 3):
 		for column in [-0.25, 0.25]:
 			var window_pos := building_pos + Vector3(-side * (width * 0.51), floor - height * 0.5, column * depth)
-			add_box(parent, window_pos, Vector3(0.08, 1.25, 1.1), Color("#8ed1e5"))
+			add_box(parent, window_pos, Vector3(0.08, 1.25, 1.1), Color("#8ed1e5"), 0.05, 0.0)
 	add_streetlight(parent, Vector3(center_x + side * 8.4, road_y(z), z), side)
 
 
 func add_streetlight(parent: Node3D, position: Vector3, side: float) -> void:
-	add_cylinder(parent, position + Vector3(0, 2.8, 0), 0.09, 5.6, Color("#343b3f"))
-	add_box(parent, position + Vector3(-side * 0.55, 5.5, 0), Vector3(1.15, 0.12, 0.12), Color("#343b3f"))
-	add_box(parent, position + Vector3(-side * 1.0, 5.35, 0), Vector3(0.42, 0.16, 0.34), Color("#fff1a8"))
+	add_cylinder(parent, position + Vector3(0, 2.8, 0), 0.09, 5.6, Color("#343b3f"), 0.4, 0.5)
+	add_box(parent, position + Vector3(-side * 0.55, 5.5, 0), Vector3(1.15, 0.12, 0.12), Color("#343b3f"), 0.4, 0.5)
+	add_box(parent, position + Vector3(-side * 1.0, 5.35, 0), Vector3(0.42, 0.16, 0.34), Color("#fff1a8"), 0.2, 0.0)
 
 
 func add_snow_scenery(parent: Node3D, z: float, side: float) -> void:
@@ -360,9 +404,9 @@ func build_zone_gate(parent: Node3D, z: float, zone_index: int) -> void:
 	var colors := [Color.WHITE, Color("#2fbc68"), Color("#ffb64d"), Color("#bfe9ff")]
 	var x := road_x(z)
 	var y := road_y(z)
-	add_box(parent, Vector3(x - 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index])
-	add_box(parent, Vector3(x + 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index])
-	add_box(parent, Vector3(x, y + 6.1, z), Vector3(14.2, 0.65, 0.4), colors[zone_index])
+	add_box(parent, Vector3(x - 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index], 0.3, 0.55)
+	add_box(parent, Vector3(x + 7.0, y + 3.2, z), Vector3(0.35, 6.4, 0.35), colors[zone_index], 0.3, 0.55)
+	add_box(parent, Vector3(x, y + 6.1, z), Vector3(14.2, 0.65, 0.4), colors[zone_index], 0.3, 0.55)
 	var label := Label3D.new()
 	label.text = labels[zone_index]
 	label.font_size = 64
@@ -374,7 +418,7 @@ func build_zone_gate(parent: Node3D, z: float, zone_index: int) -> void:
 
 
 func add_tree(parent: Node3D, position: Vector3) -> void:
-	add_cylinder(parent, position + Vector3(0, 1.8, 0), 0.24, 3.6, Color("#68442d"))
+	add_cylinder(parent, position + Vector3(0, 1.8, 0), 0.24, 3.6, Color("#68442d"), 0.94, 0.0)
 	for layer in range(3):
 		var foliage := MeshInstance3D.new()
 		var cone := CylinderMesh.new()
@@ -389,10 +433,10 @@ func add_tree(parent: Node3D, position: Vector3) -> void:
 
 func add_guardrail(parent: Node3D, center: Vector3, yaw: float, side: float) -> void:
 	var offset := Vector3(cos(yaw) * side * ROAD_WIDTH * 0.51, 0.72, -sin(yaw) * side * ROAD_WIDTH * 0.51)
-	var rail := add_box(parent, center + offset, Vector3(0.16, 0.38, SEGMENT_LENGTH * 0.9), Color("#d6dadd"))
+	var rail := add_box(parent, center + offset, Vector3(0.16, 0.38, SEGMENT_LENGTH * 0.9), Color("#d6dadd"), 0.35, 0.65)
 	rail.rotation.y = yaw
 	for post_offset in [-4.5, 4.5]:
-		var post := add_box(parent, center + offset + Vector3(sin(yaw) * post_offset, -0.45, cos(yaw) * post_offset), Vector3(0.2, 1.25, 0.2), Color("#9aa0a5"))
+		var post := add_box(parent, center + offset + Vector3(sin(yaw) * post_offset, -0.45, cos(yaw) * post_offset), Vector3(0.2, 1.25, 0.2), Color("#9aa0a5"), 0.4, 0.5)
 		post.rotation.y = yaw
 
 
@@ -400,8 +444,8 @@ func add_road_sign(parent: Node3D, z: float) -> void:
 	var yaw := road_yaw(z)
 	var side := -1.0 if int(z / SEGMENT_LENGTH) % 2 == 0 else 1.0
 	var base := Vector3(road_x(z) + cos(yaw) * side * 8.0, road_y(z), z - sin(yaw) * side * 8.0)
-	add_box(parent, base + Vector3(0, 1.7, 0), Vector3(0.16, 3.4, 0.16), Color("#bfc5c8"))
-	var board := add_box(parent, base + Vector3(0, 3.25, 0), Vector3(2.2, 1.1, 0.16), Color("#f2b53d"))
+	add_box(parent, base + Vector3(0, 1.7, 0), Vector3(0.16, 3.4, 0.16), Color("#bfc5c8"), 0.4, 0.6)
+	var board := add_box(parent, base + Vector3(0, 3.25, 0), Vector3(2.2, 1.1, 0.16), Color("#f2b53d"), 0.3, 0.5)
 	board.rotation.y = yaw
 
 
@@ -409,16 +453,16 @@ func build_bridge(parent: Node3D, z: float) -> void:
 	var x := road_x(z)
 	var y := road_y(z)
 	for side in [-1.0, 1.0]:
-		add_box(parent, Vector3(x + side * 6.2, y + 1.1, z), Vector3(0.4, 2.2, 52), Color("#aeb4b8"))
+		add_box(parent, Vector3(x + side * 6.2, y + 1.1, z), Vector3(0.4, 2.2, 52), Color("#aeb4b8"), 0.38, 0.6)
 
 
 func build_finish(parent: Node3D) -> void:
 	var z := ROAD_LENGTH - 55.0
 	var x := road_x(z)
 	var y := road_y(z)
-	add_box(parent, Vector3(x - 6.2, y + 3.2, z), Vector3(0.5, 6.4, 0.5), Color.WHITE)
-	add_box(parent, Vector3(x + 6.2, y + 3.2, z), Vector3(0.5, 6.4, 0.5), Color.WHITE)
-	add_box(parent, Vector3(x, y + 6.1, z), Vector3(12.8, 0.7, 0.7), Color("#ff9a31"))
+	add_box(parent, Vector3(x - 6.2, y + 3.2, z), Vector3(0.5, 6.4, 0.5), Color.WHITE, 0.3, 0.5)
+	add_box(parent, Vector3(x + 6.2, y + 3.2, z), Vector3(0.5, 6.4, 0.5), Color.WHITE, 0.3, 0.5)
+	add_box(parent, Vector3(x, y + 6.1, z), Vector3(12.8, 0.7, 0.7), Color("#ff9a31"), 0.35, 0.5)
 
 
 func build_player() -> void:
@@ -508,23 +552,23 @@ func create_vehicle(color: Color, vehicle_type: String, is_player := false) -> N
 		length = 4.75
 		width = 2.3
 		height = 0.58
-	add_box(root, Vector3(0, 0.18, 0), Vector3(width, height, length), color)
-	add_box(root, Vector3(0, 0.92, -0.45), Vector3(width * 0.82, 0.85, length * 0.46), color.lightened(0.06))
-	add_box(root, Vector3(0, 1.02, -0.62), Vector3(width * 0.7, 0.45, length * 0.28), Color("#8ec9df"))
+	add_box(root, Vector3(0, 0.18, 0), Vector3(width, height, length), color, 0.16, 0.85)
+	add_box(root, Vector3(0, 0.92, -0.45), Vector3(width * 0.82, 0.85, length * 0.46), color.lightened(0.06), 0.16, 0.85)
+	add_box(root, Vector3(0, 1.02, -0.62), Vector3(width * 0.7, 0.45, length * 0.28), Color("#8ec9df"), 0.05, 0.0)
 	if vehicle_type == "truck":
-		add_box(root, Vector3(0, 1.0, 1.45), Vector3(width * 0.94, 1.85, 3.0), color.darkened(0.12))
+		add_box(root, Vector3(0, 1.0, 1.45), Vector3(width * 0.94, 1.85, 3.0), color.darkened(0.12), 0.28, 0.7)
 	elif vehicle_type == "premium_rally":
-		add_box(root, Vector3(0, 1.52, -0.35), Vector3(width * 0.78, 0.12, 2.0), Color("#20262a"))
-		add_box(root, Vector3(0, 0.48, length * 0.52), Vector3(width * 0.82, 0.18, 0.12), Color("#ffdf68"))
+		add_box(root, Vector3(0, 1.52, -0.35), Vector3(width * 0.78, 0.12, 2.0), Color("#20262a"), 0.25, 0.35)
+		add_box(root, Vector3(0, 0.48, length * 0.52), Vector3(width * 0.82, 0.18, 0.12), Color("#ffdf68"), 0.16, 0.85)
 	elif vehicle_type == "premium_velocity":
-		add_box(root, Vector3(0, 0.48, -length * 0.47), Vector3(width * 0.92, 0.12, 0.55), color.darkened(0.18))
-		add_box(root, Vector3(0, 0.82, -0.2), Vector3(width * 0.7, 0.16, 2.0), Color("#17252d"))
+		add_box(root, Vector3(0, 0.48, -length * 0.47), Vector3(width * 0.92, 0.12, 0.55), color.darkened(0.18), 0.3, 0.6)
+		add_box(root, Vector3(0, 0.82, -0.2), Vector3(width * 0.7, 0.16, 2.0), Color("#17252d"), 0.25, 0.35)
 	for x in [-width * 0.53, width * 0.53]:
 		for z in [-length * 0.32, length * 0.32]:
 			var wheel_holder := Node3D.new()
 			wheel_holder.position = Vector3(x, -0.3, z)
 			root.add_child(wheel_holder)
-			var wheel := add_cylinder(wheel_holder, Vector3.ZERO, 0.43, 0.36, Color("#101214"))
+			var wheel := add_cylinder(wheel_holder, Vector3.ZERO, 0.43, 0.36, Color("#101214"), 0.85, 0.0)
 			wheel.rotation_degrees.z = 90
 			if is_player:
 				wheel_nodes.append(wheel_holder)
@@ -533,17 +577,17 @@ func create_vehicle(color: Color, vehicle_type: String, is_player := false) -> N
 	if is_player:
 		# SUV detailing: bumpers, grille, glass, mirrors and roof rack make the
 		# player's vehicle read clearly from the chase camera.
-		add_box(root, Vector3(0, 0.05, length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"))
-		add_box(root, Vector3(0, 0.23, length * 0.515), Vector3(width * 0.5, 0.28, 0.08), Color("#111719"))
-		add_box(root, Vector3(0, 0.05, -length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"))
+		add_box(root, Vector3(0, 0.05, length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"), 0.3, 0.45)
+		add_box(root, Vector3(0, 0.23, length * 0.515), Vector3(width * 0.5, 0.28, 0.08), Color("#111719"), 0.3, 0.4)
+		add_box(root, Vector3(0, 0.05, -length * 0.53), Vector3(width * 1.04, 0.22, 0.18), Color("#252b2e"), 0.3, 0.45)
 		for mirror_x in [-width * 0.56, width * 0.56]:
-			add_box(root, Vector3(mirror_x, 0.96, -0.15), Vector3(0.22, 0.18, 0.38), Color("#20272a"))
+			add_box(root, Vector3(mirror_x, 0.96, -0.15), Vector3(0.22, 0.18, 0.38), Color("#20272a"), 0.2, 0.6)
 		for rack_x in [-width * 0.32, width * 0.32]:
-			add_box(root, Vector3(rack_x, 1.48, -0.45), Vector3(0.08, 0.1, 2.0), Color("#252b2e"))
+			add_box(root, Vector3(rack_x, 1.48, -0.45), Vector3(0.08, 0.1, 2.0), Color("#252b2e"), 0.3, 0.4)
 		for rack_z in [-1.25, 0.25]:
-			add_box(root, Vector3(0, 1.51, rack_z), Vector3(width * 0.72, 0.08, 0.08), Color("#252b2e"))
-		var front_lights := add_box(root, Vector3(0, 0.58, length * 0.51), Vector3(width * 0.72, 0.18, 0.11), Color("#fff0ae"))
-		var rear_lights := add_box(root, Vector3(0, 0.44, -length * 0.51), Vector3(width * 0.68, 0.16, 0.1), Color("#e94d45"))
+			add_box(root, Vector3(0, 1.51, rack_z), Vector3(width * 0.72, 0.08, 0.08), Color("#252b2e"), 0.3, 0.4)
+		var front_lights := add_box(root, Vector3(0, 0.58, length * 0.51), Vector3(width * 0.72, 0.18, 0.11), Color("#fff0ae"), 0.2, 0.0)
+		var rear_lights := add_box(root, Vector3(0, 0.44, -length * 0.51), Vector3(width * 0.68, 0.16, 0.1), Color("#e94d45"), 0.2, 0.0)
 		head_lights = front_lights
 		tail_lights = rear_lights
 		
@@ -572,7 +616,7 @@ func populate_run() -> void:
 		var body := CharacterBody3D.new()
 		body.add_child(create_vehicle([Color("#d94b50"), Color("#3f9dcf"), Color("#e6bc45"), Color("#eceff0"), Color("#6d73c9")].pick_random(), kind))
 		add_child(body)
-		traffic.append({"node": body, "z": z, "lane": lane, "direction": direction, "speed": rng.randf_range(11.0, 24.0), "target_speed": rng.randf_range(15.0, 26.0), "kind": kind, "hit": false})
+		traffic.append({"node": body, "z": z, "lane": lane, "target_lane": lane, "direction": direction, "speed": rng.randf_range(11.0, 24.0), "target_speed": rng.randf_range(15.0, 26.0), "kind": kind, "hit": false})
 
 	for index in range(10):
 		var z := 280.0 + index * 280.0
@@ -588,6 +632,37 @@ func populate_run() -> void:
 	for z in [650.0, 1250.0, 1900.0, 2550.0]:
 		create_checkpoint(z)
 
+	# Spawn running animals along the roadside
+	animals.clear()
+	for i in range(8):
+		var z := rng.randf_range(250.0, ROAD_LENGTH - 200.0)
+		var side := [-1.0, 1.0].pick_random()
+		var animal_pos := Vector3(road_x(z) + side * rng.randf_range(11.0, 16.0), road_y(z), z)
+		var body := Node3D.new()
+		body.position = animal_pos
+		
+		# Random color for cow/horse/sheep
+		var c := [Color("#8a5a36"), Color("#5c4033"), Color("#d2b48c"), Color("#202020")].pick_random()
+		# Torso
+		add_box(body, Vector3(0, 0.5, 0), Vector3(0.5, 0.4, 0.95), c, 0.8, 0.0)
+		# Head
+		add_box(body, Vector3(0, 0.85, 0.38), Vector3(0.3, 0.35, 0.3), c, 0.8, 0.0)
+		# Legs
+		var l1 := add_box(body, Vector3(-0.18, 0.18, 0.3), Vector3(0.1, 0.36, 0.1), c.darkened(0.2), 0.8, 0.0)
+		var l2 := add_box(body, Vector3(0.18, 0.18, 0.3), Vector3(0.1, 0.36, 0.1), c.darkened(0.2), 0.8, 0.0)
+		var l3 := add_box(body, Vector3(-0.18, 0.18, -0.3), Vector3(0.1, 0.36, 0.1), c.darkened(0.2), 0.8, 0.0)
+		var l4 := add_box(body, Vector3(0.18, 0.18, -0.3), Vector3(0.1, 0.36, 0.1), c.darkened(0.2), 0.8, 0.0)
+		
+		add_child(body)
+		animals.append({
+			"node": body,
+			"initial_z": z,
+			"side": side,
+			"legs": [l1, l2, l3, l4],
+			"run_phase": rng.randf_range(0.0, 10.0),
+			"direction": [-1.0, 1.0].pick_random()
+		})
+
 
 func clear_dynamic_nodes() -> void:
 	for list in [traffic, pickups, hazards, checkpoints, effects]:
@@ -596,20 +671,25 @@ func clear_dynamic_nodes() -> void:
 			if is_instance_valid(node):
 				node.queue_free()
 		list.clear()
+	for entry in animals:
+		var node: Node = entry.get("node")
+		if is_instance_valid(node):
+			node.queue_free()
+	animals.clear()
 
 
 func create_pickup(z: float, type: String, lane: float) -> void:
 	var node := Node3D.new()
 	node.position = Vector3(road_x(z) + lane, road_y(z) + 1.25, z)
 	if type == "fuel":
-		add_box(node, Vector3.ZERO, Vector3(0.85, 1.25, 0.62), Color("#48d77e"))
-		add_box(node, Vector3(0.18, 0.74, 0), Vector3(0.35, 0.2, 0.45), Color("#18232a"))
+		add_box(node, Vector3.ZERO, Vector3(0.85, 1.25, 0.62), Color("#48d77e"), 0.25, 0.1)
+		add_box(node, Vector3(0.18, 0.74, 0), Vector3(0.35, 0.2, 0.45), Color("#18232a"), 0.25, 0.1)
 	elif type == "repair":
-		add_box(node, Vector3.ZERO, Vector3(1.05, 1.05, 0.45), Color("#f0f3f4"))
-		add_box(node, Vector3.ZERO, Vector3(0.23, 0.75, 0.52), Color("#e64f4f"))
-		add_box(node, Vector3.ZERO, Vector3(0.75, 0.23, 0.52), Color("#e64f4f"))
+		add_box(node, Vector3.ZERO, Vector3(1.05, 1.05, 0.45), Color("#f0f3f4"), 0.25, 0.1)
+		add_box(node, Vector3.ZERO, Vector3(0.23, 0.75, 0.52), Color("#e64f4f"), 0.25, 0.1)
+		add_box(node, Vector3.ZERO, Vector3(0.75, 0.23, 0.52), Color("#e64f4f"), 0.25, 0.1)
 	else:
-		add_cylinder(node, Vector3.ZERO, 0.48, 0.14, Color("#ffd34f")).rotation_degrees.x = 90
+		add_cylinder(node, Vector3.ZERO, 0.48, 0.14, Color("#ffd34f"), 0.12, 0.9).rotation_degrees.x = 90
 	add_child(node)
 	pickups.append({"node": node, "type": type, "taken": false})
 
@@ -641,9 +721,9 @@ func create_hazard(z: float, type: String, lane: float) -> void:
 func create_checkpoint(z: float) -> void:
 	var node := Node3D.new()
 	node.position = Vector3(road_x(z), road_y(z), z)
-	add_box(node, Vector3(-6.0, 2.8, 0), Vector3(0.35, 5.6, 0.35), Color("#62c9ff"))
-	add_box(node, Vector3(6.0, 2.8, 0), Vector3(0.35, 5.6, 0.35), Color("#62c9ff"))
-	add_box(node, Vector3(0, 5.45, 0), Vector3(12.3, 0.45, 0.45), Color("#62c9ff"))
+	add_box(node, Vector3(-6.0, 2.8, 0), Vector3(0.35, 5.6, 0.35), Color("#62c9ff"), 0.28, 0.65)
+	add_box(node, Vector3(6.0, 2.8, 0), Vector3(0.35, 5.6, 0.35), Color("#62c9ff"), 0.28, 0.65)
+	add_box(node, Vector3(0, 5.45, 0), Vector3(12.3, 0.45, 0.45), Color("#62c9ff"), 0.28, 0.65)
 	add_child(node)
 	checkpoints.append({"node": node, "z": z, "passed": false})
 
@@ -793,6 +873,11 @@ func _physics_process(delta: float) -> void:
 	car_visual.position.y = sin(Time.get_ticks_msec() * (0.04 if broken else 0.014)) * (0.08 if broken else 0.018) / suspension
 	
 	spawn_exhaust_smoke(delta)
+	if weather == "Rain" and rng.randf() < 0.85:
+		for i in range(4):
+			spawn_rain_drop()
+	if (weather == "Fog" or weather == "Rain") and rng.randf() < 0.22:
+		spawn_wind_streak()
 	
 	for wheel in front_wheel_nodes:
 		wheel.rotation.y = steering * 0.45
@@ -800,6 +885,7 @@ func _physics_process(delta: float) -> void:
 		wheel.rotation.x += speed * delta * 2.325
 
 	update_traffic(delta)
+	update_animals(delta)
 	check_interactions()
 	distance = maxf(0.0, player.position.z - START_Z)
 	crash_cooldown = maxf(0.0, crash_cooldown - delta)
@@ -823,7 +909,8 @@ func update_traffic(delta: float) -> void:
 		if entry.direction > 0 and gap > 0 and gap < 18 and absf(body.position.x - player.position.x) < 2.4:
 			desired *= 0.55
 			if gap < 10:
-				entry.lane = 3.1 if entry.lane < 0 else -3.1
+				entry.target_lane = 3.1 if entry.get("target_lane", entry.lane) < 0.0 else -3.1
+		entry.lane = move_toward(entry.lane, entry.get("target_lane", entry.lane), delta * 8.0)
 		entry.speed = move_toward(entry.speed, desired, delta * 4.0)
 		entry.z += entry.speed * entry.direction * delta
 		if entry.z < 80:
@@ -833,6 +920,42 @@ func update_traffic(delta: float) -> void:
 		body.position = Vector3(road_x(entry.z) + entry.lane, road_y(entry.z) + 0.93, entry.z)
 		body.rotation.y = road_yaw(entry.z) + (PI if entry.direction < 0 else 0.0)
 		body.rotation.x = -road_slope(entry.z) * entry.direction * 0.8
+
+
+func update_animals(delta: float) -> void:
+	for entry in animals:
+		var body: Node3D = entry.node
+		if not is_instance_valid(body):
+			continue
+		
+		entry.run_phase += delta * 14.0
+		
+		# Move animal along Z in a loop around initial_z
+		var z_offset := sin(entry.run_phase * 0.16) * 24.0
+		var cur_z: float = entry.initial_z + z_offset
+		
+		# Determine movement direction for rotation
+		var running_forward := cos(entry.run_phase * 0.16) >= 0.0
+		
+		body.position.z = cur_z
+		body.position.x = road_x(cur_z) + entry.side * 13.5
+		body.position.y = road_y(cur_z)
+		
+		# Rotate to face running direction
+		body.rotation.y = road_yaw(cur_z) + (0.0 if running_forward else PI)
+		body.rotation.x = -road_slope(cur_z) * (1.0 if running_forward else -1.0)
+		
+		# Animate legs swinging
+		var swing := sin(entry.run_phase) * 0.65
+		var legs: Array = entry.legs
+		if legs.size() == 4:
+			legs[0].rotation.x = swing
+			legs[1].rotation.x = -swing
+			legs[2].rotation.x = -swing
+			legs[3].rotation.x = swing
+		
+		# Bob body
+		body.position.y += absf(sin(entry.run_phase)) * 0.12
 
 
 func check_interactions() -> void:
@@ -958,6 +1081,8 @@ func update_effects(delta: float) -> void:
 			var mat := effect.node.material_override as StandardMaterial3D
 			if mat:
 				mat.albedo_color.a = clampf(effect.life / 0.75 * 0.46, 0.0, 1.0)
+		elif effect.get("is_rain", false) or effect.get("is_wind", false):
+			pass
 		else:
 			effect.node.scale += Vector3.ONE * delta * 0.3
 			
@@ -1130,20 +1255,34 @@ func apply_weather(value: String) -> void:
 	weather = value
 	weather_label.text = weather.to_upper()
 	var env := world_environment.environment
+	var sky_mat := env.sky.sky_material as ProceduralSkyMaterial
 	if weather == "Fog":
 		env.fog_density = 0.009
-		env.background_color = Color("#9aaeb5")
-		sun.light_energy = 0.75
+		env.fog_light_color = Color("#9aaeb5")
+		if sky_mat:
+			sky_mat.sky_top_color = Color("#738287")
+			sky_mat.sky_horizon_color = Color("#9aaeb5")
+			sky_mat.ground_horizon_color = Color("#9aaeb5")
+		env.ambient_light_energy = 0.6
+		sun.light_energy = 0.6
 	elif weather == "Rain":
 		env.fog_density = 0.004
-		env.background_color = Color("#526b79")
-		env.ambient_light_energy = 0.45
-		sun.light_energy = 0.55
+		env.fog_light_color = Color("#526b79")
+		if sky_mat:
+			sky_mat.sky_top_color = Color("#3a4e58")
+			sky_mat.sky_horizon_color = Color("#526b79")
+			sky_mat.ground_horizon_color = Color("#526b79")
+		env.ambient_light_energy = 0.4
+		sun.light_energy = 0.45
 	else:
-		env.fog_density = 0.002
-		env.background_color = Color("#79add0")
-		env.ambient_light_energy = 0.78
-		sun.light_energy = 1.45
+		env.fog_density = 0.0016
+		env.fog_light_color = Color("#698ea9")
+		if sky_mat:
+			sky_mat.sky_top_color = Color("#2e5170")
+			sky_mat.sky_horizon_color = Color("#698ea9")
+			sky_mat.ground_horizon_color = Color("#698ea9")
+		env.ambient_light_energy = 0.85
+		sun.light_energy = 1.6
 
 
 func is_bad_road(z: float) -> bool:
@@ -2085,18 +2224,18 @@ func make_bar(parent: Control, position: Vector2, fill: Color, size: Vector2) ->
 	return bar
 
 
-func add_box(parent: Node, position: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+func add_box(parent: Node, position: Vector3, size: Vector3, color: Color, roughness := 0.78, metallic := 0.0) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	node.mesh = mesh
 	node.position = position
-	node.material_override = make_material(color)
+	node.material_override = make_material(color, roughness, 0.0, metallic)
 	parent.add_child(node)
 	return node
 
 
-func add_cylinder(parent: Node, position: Vector3, radius: float, height: float, color: Color) -> MeshInstance3D:
+func add_cylinder(parent: Node, position: Vector3, radius: float, height: float, color: Color, roughness := 0.78, metallic := 0.0) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = radius
@@ -2104,15 +2243,16 @@ func add_cylinder(parent: Node, position: Vector3, radius: float, height: float,
 	mesh.height = height
 	node.mesh = mesh
 	node.position = position
-	node.material_override = make_material(color)
+	node.material_override = make_material(color, roughness, 0.0, metallic)
 	parent.add_child(node)
 	return node
 
 
-func make_material(color: Color, roughness := 0.78, emission := 0.0) -> StandardMaterial3D:
+func make_material(color: Color, roughness := 0.78, emission := 0.0, metallic := 0.0) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.roughness = roughness
+	mat.metallic = metallic
 	if emission > 0:
 		mat.emission_enabled = true
 		mat.emission = color
@@ -2150,6 +2290,58 @@ func spawn_exhaust_smoke(delta: float) -> void:
 		"velocity": smoke_vel, 
 		"life": 0.75, 
 		"is_smoke": true
+	})
+
+
+func spawn_rain_drop() -> void:
+	if not is_instance_valid(player):
+		return
+	var drop := MeshInstance3D.new()
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = 0.02
+	cylinder.bottom_radius = 0.02
+	cylinder.height = 1.2
+	drop.mesh = cylinder
+	
+	var offset := Vector3(
+		rng.randf_range(-22.0, 22.0),
+		rng.randf_range(7.0, 16.0),
+		rng.randf_range(-10.0, 32.0)
+	)
+	drop.position = player.global_position + offset
+	drop.material_override = make_material(Color(0.75, 0.82, 0.9, 0.45), 0.1)
+	add_child(drop)
+	
+	effects.append({
+		"node": drop,
+		"velocity": Vector3(0, -36.0, speed),
+		"life": 0.62,
+		"is_rain": true
+	})
+
+
+func spawn_wind_streak() -> void:
+	if not is_instance_valid(player) or speed < 5.0:
+		return
+	var streak := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.05, 0.03, rng.randf_range(3.0, 7.0))
+	streak.mesh = box
+	
+	var offset := Vector3(
+		rng.randf_range(-18.0, 18.0),
+		rng.randf_range(1.2, 7.5),
+		rng.randf_range(-10.0, 25.0)
+	)
+	streak.position = player.global_position + offset
+	streak.material_override = make_material(Color(1.0, 1.0, 1.0, 0.15), 0.9)
+	add_child(streak)
+	
+	effects.append({
+		"node": streak,
+		"velocity": Vector3(0, 0, -speed * 0.4),
+		"life": 0.72,
+		"is_wind": true
 	})
 
 
