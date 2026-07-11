@@ -3,7 +3,8 @@ $ErrorActionPreference = "Stop"
 $project = Split-Path -Parent $PSScriptRoot
 $godot = "C:\Users\Viral L\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe"
 $keystore = "$project\signing_backup\mountain-driver-release.keystore"
-$output = Join-Path $project "builds\android\VRL-Mountain-Driver-3D-release.apk"
+$outputApk = Join-Path $project "builds\android\VRL-Mountain-Driver-3D-release.apk"
+$outputAab = Join-Path $project "builds\android\VRL-Mountain-Driver-3D-release.aab"
 $alias = "mountaindriver"
 $androidTemplate = Join-Path $project "android\build"
 
@@ -20,7 +21,7 @@ if (-not (Test-Path -LiteralPath $keystore)) {
     throw "Release keystore was not found at: $keystore"
 }
 
-New-Item -ItemType Directory -Path (Split-Path -Parent $output) -Force | Out-Null
+New-Item -ItemType Directory -Path (Split-Path -Parent $outputApk) -Force | Out-Null
 
 $securePassword = Read-Host "Enter the VRL PRO release-key password" -AsSecureString
 $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
@@ -34,34 +35,25 @@ try {
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = $alias
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = $plainPassword
 
-    $godotArguments = @(
-        "--headless",
-        "--path", $project
-    )
-
-    if (-not (Test-Path -LiteralPath $androidTemplate)) {
-        $godotArguments += "--install-android-build-template"
-    }
-
-    $godotArguments += @(
-        "--export-release", "Android Test",
-        $output
-    )
-
-    Write-Host "Exporting signed release APK to $output..."
-    & $godot @godotArguments
+    # 1. Export Signed Release APK
+    Write-Host "Exporting signed release APK to $outputApk..."
+    & $godot --headless --path $project --export-release "Android Test" $outputApk
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Godot export failed with exit code $LASTEXITCODE."
+        throw "Godot APK export failed with exit code $LASTEXITCODE."
     }
 
-    if (-not (Test-Path -LiteralPath $output)) {
-        throw "The APK was not created."
+    # 2. Export Signed Release AAB
+    Write-Host "Exporting signed release AAB to $outputAab..."
+    & $godot --headless --path $project --export-release "Android Play Store" $outputAab
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot AAB export failed with exit code $LASTEXITCODE."
     }
 
-    Write-Host "Success! Signed release APK generated:"
-    Get-Item -LiteralPath $output |
-        Select-Object FullName, Length, LastWriteTime
+    Write-Host "`nSuccess! Signed Release builds generated:"
+    Get-Item -LiteralPath $outputApk, $outputAab |
+        Select-Object Name, Length, LastWriteTime
 }
 finally {
     # Clean up sensitive env variables
